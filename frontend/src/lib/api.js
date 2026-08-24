@@ -20,3 +20,9 @@ export async function getVehicles() {
   if (!response.ok) throw new Error('Unable to load vehicles')
   return response.json()
 }
+
+export async function getHealth() {
+  const response = await fetch(`${API_BASE_URL}/health`)
+  if (!response.ok) throw new Error('GreenRoute backend is unavailable')
+  return response.json()
+}
