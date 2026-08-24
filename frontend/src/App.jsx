@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import HeroScene from './components/HeroScene.jsx'
 import RouteMap from './components/RouteMap.jsx'
-import { optimizeRoute } from './lib/api.js'
+import { getHealth, optimizeRoute } from './lib/api.js'
 
 const VEHICLES = [
   { value: 'tata_ace', label: 'Tata Ace / Mini Truck', payload: '1.0 t' },
@@ -64,16 +64,51 @@ export default function App() {
     load_kg: 2500,
     vehicle_type: 'lcv',
     fuel_price_per_litre: 92.5,
+    departure_time: 'now',
   })
   const [routes, setRoutes] = useState(PREVIEW_ROUTES)
   const [selectedKind, setSelectedKind] = useState('balanced')
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('Preview data — run an optimization after adding your TomTom key.')
+  const [routingMode, setRoutingMode] = useState('checking')
+  const [message, setMessage] = useState('Connecting to the GreenRoute routing engine…')
 
   const selectedRoute = useMemo(
     () => routes.find((route) => route.kind === selectedKind) || routes[0],
     [routes, selectedKind],
   )
+
+  const fastestRoute = useMemo(
+    () => routes.find((route) => route.kind === 'fastest') || routes[0],
+    [routes],
+  )
+
+  const selectedSavings = useMemo(() => {
+    if (!selectedRoute || !fastestRoute) return null
+    return {
+      cost: Math.max(0, fastestRoute.fuel_cost - selectedRoute.fuel_cost),
+      carbon: Math.max(0, fastestRoute.co2_kg - selectedRoute.co2_kg),
+    }
+  }, [selectedRoute, fastestRoute])
+
+  useEffect(() => {
+    let cancelled = false
+    getHealth()
+      .then((health) => {
+        if (cancelled) return
+        setRoutingMode(health.routing_mode)
+        if (health.routing_mode === 'live') {
+          setMessage('Live mode ready — TomTom traffic-aware routing is configured.')
+        } else {
+          setMessage('Demo mode ready — add TOMTOM_API_KEY to switch these simulations to real roads and live traffic.')
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setRoutingMode('offline')
+        setMessage('Backend is offline. Preview routes remain available while you start FastAPI.')
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const change = (event) => {
     const { name, value } = event.target
@@ -86,7 +121,7 @@ export default function App() {
   async function submit(event) {
     event.preventDefault()
     setLoading(true)
-    setMessage('Fetching live traffic and evaluating route trade-offs…')
+    setMessage('Fetching route candidates and evaluating time, fuel and carbon trade-offs…')
     try {
       const data = await optimizeRoute(form)
       const nextRoutes = Object.entries(data.recommendations).map(([kind, route]) => ({
@@ -96,19 +131,29 @@ export default function App() {
       }))
       setRoutes(nextRoutes)
       setSelectedKind('balanced')
-      setMessage(`Live result · ${data.candidate_count} candidate routes analysed`)
+      setRoutingMode(data.mode)
+      const modeLabel = data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'
+      setMessage(`${modeLabel} · ${data.candidate_count} candidate routes analysed · ${data.notice}`)
     } catch (error) {
-      setMessage(`${error.message}. Showing preview routes instead.`)
+      setMessage(`${error.message}. Keeping the last available routes on screen.`)
     } finally {
       setLoading(false)
     }
   }
 
+  const modeLabel = routingMode === 'live'
+    ? '● Live traffic'
+    : routingMode === 'demo'
+      ? '◇ Demo mode'
+      : routingMode === 'offline'
+        ? '○ Backend offline'
+        : '… Connecting'
+
   return (
     <main>
       <nav className="topbar">
         <a className="brand" href="#top" aria-label="GreenRoute home"><span className="brand-mark">G</span>GreenRoute</a>
-        <div className="nav-links"><a href="#planner">Route Lab</a><a href="#impact">Impact</a><span className="status-pill">India logistics</span></div>
+        <div className="nav-links"><a href="#planner">Route Lab</a><a href="#impact">Impact</a><span className="status-pill">{modeLabel}</span></div>
       </nav>
 
       <section className="hero" id="top">
@@ -116,7 +161,7 @@ export default function App() {
           <div className="eyebrow">MULTI-OBJECTIVE LOGISTICS INTELLIGENCE</div>
           <h1>Choose the route that matches <em>what matters now.</em></h1>
           <p>GreenRoute blends live traffic, vehicle load, fuel economics and carbon analytics to surface the fastest, balanced and greenest shipment paths.</p>
-          <div className="hero-actions"><a className="primary-btn" href="#planner">Plan a route ↘</a><span className="live-chip"><i /> Live-traffic ready</span></div>
+          <div className="hero-actions"><a className="primary-btn" href="#planner">Plan a route ↘</a><span className="live-chip"><i /> 3D route intelligence</span></div>
           <div className="hero-stats"><div><b>3</b><span>route strategies</span></div><div><b>Live</b><span>traffic-aware ETA</span></div><div><b>CO₂</b><span>trip-level analytics</span></div></div>
         </div>
         <HeroScene />
@@ -142,7 +187,7 @@ export default function App() {
               </select>
             </label>
 
-            <button className="optimize-btn" disabled={loading} type="submit">{loading ? 'Optimizing…' : 'Optimize live routes'}<span>→</span></button>
+            <button className="optimize-btn" disabled={loading} type="submit">{loading ? 'Optimizing…' : 'Optimize routes'}<span>→</span></button>
           </form>
 
           <div className="map-panel glass-panel">
@@ -158,7 +203,7 @@ export default function App() {
       </section>
 
       <section className="impact-section" id="impact">
-        <div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every route explains its trade-off.</h2><p>Instead of hiding sustainability behind a report, GreenRoute brings estimated fuel use and CO₂ into the decision itself. The database layer is prepared for trip history and BRSR-oriented analytics.</p></div>
+        <div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every route explains its trade-off.</h2><p>Instead of hiding sustainability behind a report, GreenRoute brings estimated fuel use and CO₂ into the decision itself. The database layer is prepared for trip history and BRSR-oriented analytics.</p>{selectedSavings && selectedKind !== 'fastest' && <p className="impact-saving">Compared with Fastest: save about <b>₹{Math.round(selectedSavings.cost).toLocaleString('en-IN')}</b> and <b>{selectedSavings.carbon.toFixed(1)} kg CO₂</b>.</p>}</div>
         <div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg CO₂</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div>
       </section>
 
