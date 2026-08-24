@@ -1,8 +1,7 @@
-from urllib.parse import quote
 import httpx
 
 
-SEARCH_URL = "https://api.tomtom.com/search/2/geocode/{query}.json"
+GEOCODING_URL = "https://api.tomtom.com/maps/orbis/places/geocode"
 ROUTING_URL = "https://api.tomtom.com/maps/orbis/routing/routes/calculate"
 
 
@@ -13,10 +12,20 @@ class TomTomClient:
         self.api_key = api_key
 
     async def geocode(self, query: str) -> dict:
-        url = SEARCH_URL.format(query=quote(query, safe=""))
-        params = {"key": self.api_key, "limit": 1, "countrySet": "IN"}
+        headers = {
+            "TomTom-Api-Version": "2",
+            "TomTom-Api-Key": self.api_key,
+            "Attributes": "results(title,position,address)",
+            "Accept": "application/json",
+        }
+        params = {
+            "query": query,
+            "maxResults": 1,
+            "countryCodesIso2": "IN",
+            "geopoliticalView": "IN",
+        }
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url, params=params)
+            response = await client.get(GEOCODING_URL, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
 
@@ -24,24 +33,36 @@ class TomTomClient:
             raise ValueError(f"Location not found in India: {query}")
 
         result = data["results"][0]
+        coordinates = result.get("position", {}).get("coordinates", [])
+        if len(coordinates) < 2:
+            raise ValueError(f"TomTom did not return coordinates for: {query}")
+
         return {
-            "label": result.get("address", {}).get("freeformAddress", query),
-            "lat": result["position"]["lat"],
-            "lon": result["position"]["lon"],
+            "label": result.get("title", query),
+            "lat": coordinates[1],
+            "lon": coordinates[0],
         }
 
-    async def calculate_routes(self, origin: dict, destination: dict, vehicle_weight_kg: int, max_speed_kmph: int) -> list[dict]:
+    async def calculate_routes(
+        self,
+        origin: dict,
+        destination: dict,
+        vehicle_weight_kg: int,
+        max_speed_kmph: int,
+        departure_time: str = "now",
+    ) -> list[dict]:
         headers = {
             "Content-Type": "application/json",
             "TomTom-Api-Version": "3",
             "TomTom-Api-Key": self.api_key,
-            "Attributes": "routes(summary, legs.path)",
+            "Attributes": "routes(summary,legs(path,summary))",
         }
         payload = {
             "routePlanningLocations": {
                 "origin": {"type": "Point", "coordinates": [origin["lon"], origin["lat"]]},
                 "destination": {"type": "Point", "coordinates": [destination["lon"], destination["lat"]]},
             },
+            "departureDateTime": departure_time or "now",
             "routeType": "fast",
             "travelMode": "car",
             "traffic": "live",
@@ -80,6 +101,7 @@ class TomTomClient:
                 "coordinates": coordinates,
             })
 
+        parsed = [route for route in parsed if route["distance_km"] > 0 and len(route["coordinates"]) > 1]
         if not parsed:
             raise ValueError("TomTom returned no usable routes")
         return parsed
