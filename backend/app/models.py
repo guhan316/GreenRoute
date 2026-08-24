@@ -7,6 +7,7 @@ class RouteOptimizationRequest(BaseModel):
     load_kg: float = Field(gt=0, le=50000)
     vehicle_type: str
     fuel_price_per_litre: float = Field(gt=0, le=500)
+    departure_time: str = Field(default="now", min_length=3, max_length=64)
 
 
 class VrpRequest(BaseModel):
