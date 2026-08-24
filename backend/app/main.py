@@ -4,12 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .models import RouteOptimizationRequest, VrpRequest
 from .services.carbon import get_vehicle_profile, list_vehicle_profiles, estimate_trip_metrics
+from .services.demo import calculate_demo_routes, geocode_demo
 from .services.scoring import build_recommendations
 from .services.tomtom import TomTomClient
 from .services.vrp import solve_capacitated_vrp
 
 settings = get_settings()
-app = FastAPI(title="GreenRoute API", version="0.1.0")
+app = FastAPI(title="GreenRoute API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -21,7 +22,13 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "GreenRoute API", "tomtom_configured": bool(settings.tomtom_api_key)}
+    return {
+        "status": "ok",
+        "service": "GreenRoute API",
+        "tomtom_configured": bool(settings.tomtom_api_key),
+        "demo_fallback_enabled": settings.demo_fallback_enabled,
+        "routing_mode": "live" if settings.tomtom_api_key else "demo",
+    }
 
 
 @app.get("/api/vehicles")
@@ -38,21 +45,39 @@ async def optimize_routes(request: RouteOptimizationRequest):
                 f"Load exceeds {profile.label} payload capacity ({profile.max_payload_kg:.0f} kg)"
             )
 
-        client = TomTomClient(settings.tomtom_api_key)
-        origin = await client.geocode(request.origin)
-        destination = await client.geocode(request.destination)
-        candidates = await client.calculate_routes(
-            origin,
-            destination,
-            vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
-            max_speed_kmph=profile.max_speed_kmph,
-        )
+        if settings.tomtom_api_key:
+            mode = "live"
+            origin = await TomTomClient(settings.tomtom_api_key).geocode(request.origin)
+            destination = await TomTomClient(settings.tomtom_api_key).geocode(request.destination)
+            client = TomTomClient(settings.tomtom_api_key)
+            candidates = await client.calculate_routes(
+                origin,
+                destination,
+                vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
+                max_speed_kmph=profile.max_speed_kmph,
+                departure_time=request.departure_time,
+            )
+            notice = "Live TomTom traffic-aware route candidates."
+        else:
+            if not settings.demo_fallback_enabled:
+                raise ValueError("TOMTOM_API_KEY is required when demo fallback is disabled")
+            mode = "demo"
+            origin = geocode_demo(request.origin)
+            destination = geocode_demo(request.destination)
+            candidates = calculate_demo_routes(origin, destination)
+            notice = (
+                "Synthetic development routes are being shown. "
+                "Add TOMTOM_API_KEY to switch to real roads and live traffic."
+            )
+
         measured = [
             estimate_trip_metrics(candidate, profile, request.load_kg, request.fuel_price_per_litre)
             for candidate in candidates
         ]
         result = build_recommendations(measured)
         return {
+            "mode": mode,
+            "notice": notice,
             "origin": origin,
             "destination": destination,
             "vehicle": profile.label,
