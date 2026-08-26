@@ -26,101 +26,56 @@ class SupabasePersistence:
 
     async def get_user(self, token: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{self.url}/auth/v1/user",
-                headers=self._headers(token),
-            )
+            response = await client.get(f"{self.url}/auth/v1/user", headers=self._headers(token))
         if response.status_code == 401:
             raise ValueError("Your GreenRoute session has expired. Please sign in again.")
         response.raise_for_status()
         return response.json()
 
     async def save_optimization(self, token: str, payload: dict[str, Any]) -> str:
-        user = await self.get_user(token)
-        user_id = user.get("id")
-        if not user_id:
-            raise ValueError("Unable to resolve the signed-in Supabase user")
-
+        await self.get_user(token)
         optimization = payload["optimization"]
         form = payload["form"]
         selected_strategy = payload["selected_strategy"]
         origin = optimization["origin"]
         destination = optimization["destination"]
 
+        recommendations = optimization.get("recommendations", {})
+        candidates_by_id: dict[str, dict[str, Any]] = {}
+        for strategy, route in recommendations.items():
+            candidate_key = route.get("candidate_id") or f"{strategy}-{route.get('distance_km')}"
+            item = candidates_by_id.setdefault(candidate_key, {**route, "candidate_id": candidate_key, "recommended_as": []})
+            item["recommended_as"].append(strategy)
+
         departure_time = form.get("departure_time")
         if departure_time == "now":
             departure_time = None
 
-        run_row = {
-            "user_id": user_id,
-            "origin_label": origin.get("label") or form.get("origin"),
-            "destination_label": destination.get("label") or form.get("destination"),
-            "origin": f"SRID=4326;POINT({origin['lon']} {origin['lat']})",
-            "destination": f"SRID=4326;POINT({destination['lon']} {destination['lat']})",
-            "vehicle_key": form["vehicle_type"],
-            "load_kg": form["load_kg"],
-            "fuel_price_per_litre": form["fuel_price_per_litre"],
-            "departure_time": departure_time,
-            "routing_mode": optimization.get("mode", "demo"),
-            "selected_strategy": selected_strategy,
+        rpc_payload = {
+            "p_origin_label": origin.get("label") or form.get("origin"),
+            "p_destination_label": destination.get("label") or form.get("destination"),
+            "p_origin_lon": origin["lon"],
+            "p_origin_lat": origin["lat"],
+            "p_destination_lon": destination["lon"],
+            "p_destination_lat": destination["lat"],
+            "p_vehicle_key": form["vehicle_type"],
+            "p_load_kg": form["load_kg"],
+            "p_fuel_price_per_litre": form["fuel_price_per_litre"],
+            "p_departure_time": departure_time,
+            "p_routing_mode": optimization.get("mode", "demo"),
+            "p_selected_strategy": selected_strategy,
+            "p_candidates": list(candidates_by_id.values()),
         }
 
         async with httpx.AsyncClient(timeout=20.0) as client:
-            run_response = await client.post(
-                f"{self.url}/rest/v1/optimization_runs",
-                params={"select": "id"},
-                headers=self._headers(token, "return=representation"),
-                json=run_row,
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/save_optimization_run",
+                headers=self._headers(token),
+                json=rpc_payload,
             )
-            if run_response.is_error:
-                raise ValueError(self._error_message(run_response, "Unable to save optimization run"))
-            run_rows = run_response.json()
-            run_id = run_rows[0]["id"]
-
-            recommendations = optimization.get("recommendations", {})
-            candidates_by_id: dict[str, dict[str, Any]] = {}
-            for strategy, route in recommendations.items():
-                candidate_key = route.get("candidate_id") or f"{strategy}-{route.get('distance_km')}"
-                item = candidates_by_id.setdefault(candidate_key, {**route, "recommended_as": []})
-                item["recommended_as"].append(strategy)
-
-            candidate_rows = []
-            for candidate_key, route in candidates_by_id.items():
-                coordinates = route.get("coordinates") or []
-                geometry = None
-                if len(coordinates) >= 2:
-                    geometry = "SRID=4326;LINESTRING(" + ",".join(
-                        f"{float(point[0])} {float(point[1])}" for point in coordinates
-                    ) + ")"
-                candidate_rows.append({
-                    "optimization_run_id": run_id,
-                    "provider_candidate_id": route.get("candidate_id") or candidate_key,
-                    "route_geometry": geometry,
-                    "distance_km": route["distance_km"],
-                    "duration_minutes": route["duration_minutes"],
-                    "traffic_delay_minutes": route.get("traffic_delay_minutes", 0),
-                    "fuel_litres": route["fuel_litres"],
-                    "fuel_cost": route["fuel_cost"],
-                    "co2_kg": route["co2_kg"],
-                    "balanced_score": route.get("balanced_score"),
-                    "recommended_as": route["recommended_as"],
-                })
-
-            if candidate_rows:
-                candidates_response = await client.post(
-                    f"{self.url}/rest/v1/route_candidates",
-                    headers=self._headers(token, "return=minimal"),
-                    json=candidate_rows,
-                )
-                if candidates_response.is_error:
-                    await client.delete(
-                        f"{self.url}/rest/v1/optimization_runs",
-                        params={"id": f"eq.{run_id}"},
-                        headers=self._headers(token, "return=minimal"),
-                    )
-                    raise ValueError(self._error_message(candidates_response, "Unable to save route candidates"))
-
-        return run_id
+        if response.is_error:
+            raise ValueError(self._error_message(response, "Unable to save optimization run"))
+        return str(response.json())
 
     async def get_history(self, token: str, limit: int = 20) -> list[dict[str, Any]]:
         await self.get_user(token)
@@ -130,11 +85,7 @@ class SupabasePersistence:
             "limit": str(max(1, min(limit, 100))),
         }
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(
-                f"{self.url}/rest/v1/optimization_runs",
-                params=params,
-                headers=self._headers(token),
-            )
+            response = await client.get(f"{self.url}/rest/v1/optimization_runs", params=params, headers=self._headers(token))
         if response.is_error:
             raise ValueError(self._error_message(response, "Unable to load trip history"))
         return response.json()
@@ -153,11 +104,7 @@ class SupabasePersistence:
     @staticmethod
     def build_dashboard(history: list[dict[str, Any]]) -> dict[str, Any]:
         trip_count = len(history)
-        distance_km = 0.0
-        fuel_litres = 0.0
-        co2_kg = 0.0
-        co2_saved_kg = 0.0
-        fuel_cost_saved = 0.0
+        distance_km = fuel_litres = co2_kg = co2_saved_kg = fuel_cost_saved = 0.0
         greenest_count = 0
         strategy_counts = {"fastest": 0, "balanced": 0, "greenest": 0}
 
@@ -169,14 +116,8 @@ class SupabasePersistence:
                 greenest_count += 1
 
             candidates = run.get("route_candidates") or []
-            selected = next(
-                (item for item in candidates if selected_strategy in (item.get("recommended_as") or [])),
-                None,
-            )
-            fastest = next(
-                (item for item in candidates if "fastest" in (item.get("recommended_as") or [])),
-                None,
-            )
+            selected = next((item for item in candidates if selected_strategy in (item.get("recommended_as") or [])), None)
+            fastest = next((item for item in candidates if "fastest" in (item.get("recommended_as") or [])), None)
             if selected:
                 distance_km += float(selected.get("distance_km") or 0)
                 fuel_litres += float(selected.get("fuel_litres") or 0)
