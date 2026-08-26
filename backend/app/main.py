@@ -1,16 +1,18 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .models import RouteOptimizationRequest, VrpRequest
-from .services.carbon import get_vehicle_profile, list_vehicle_profiles, estimate_trip_metrics
+from .models import OptimizationSaveRequest, RouteOptimizationRequest, VrpRequest
+from .services.carbon import estimate_trip_metrics, get_vehicle_profile, list_vehicle_profiles
 from .services.demo import calculate_demo_routes, geocode_demo
+from .services.persistence import SupabasePersistence
 from .services.scoring import build_recommendations
 from .services.tomtom import TomTomClient
 from .services.vrp import solve_capacitated_vrp
 
 settings = get_settings()
-app = FastAPI(title="GreenRoute API", version="0.2.0")
+persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
+app = FastAPI(title="GreenRoute API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -18,6 +20,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _bearer_token(authorization: str | None) -> str:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Sign in to save or view GreenRoute trip history")
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing Supabase access token")
+    return token
+
+
+def _require_persistence() -> None:
+    if not persistence.configured:
+        raise HTTPException(status_code=503, detail="Supabase persistence is not configured on the GreenRoute backend")
 
 
 @app.get("/health")
@@ -28,6 +44,7 @@ def health():
         "tomtom_configured": bool(settings.tomtom_api_key),
         "demo_fallback_enabled": settings.demo_fallback_enabled,
         "routing_mode": "live" if settings.tomtom_api_key else "demo",
+        "supabase_persistence_configured": persistence.configured,
     }
 
 
@@ -47,9 +64,9 @@ async def optimize_routes(request: RouteOptimizationRequest):
 
         if settings.tomtom_api_key:
             mode = "live"
-            origin = await TomTomClient(settings.tomtom_api_key).geocode(request.origin)
-            destination = await TomTomClient(settings.tomtom_api_key).geocode(request.destination)
             client = TomTomClient(settings.tomtom_api_key)
+            origin = await client.geocode(request.origin)
+            destination = await client.geocode(request.destination)
             candidates = await client.calculate_routes(
                 origin,
                 destination,
@@ -89,6 +106,64 @@ async def optimize_routes(request: RouteOptimizationRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Routing service error: {exc}") from exc
+
+
+@app.post("/api/history/save")
+async def save_history(
+    request: OptimizationSaveRequest,
+    authorization: str | None = Header(default=None),
+):
+    _require_persistence()
+    token = _bearer_token(authorization)
+    try:
+        run_id = await persistence.save_optimization(token, request.model_dump())
+        return {"saved": True, "run_id": run_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Persistence service error: {exc}") from exc
+
+
+@app.get("/api/history")
+async def history(
+    authorization: str | None = Header(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    _require_persistence()
+    token = _bearer_token(authorization)
+    try:
+        rows = await persistence.get_history(token, limit)
+        return {"trips": rows}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Persistence service error: {exc}") from exc
+
+
+@app.get("/api/dashboard")
+async def dashboard(authorization: str | None = Header(default=None)):
+    _require_persistence()
+    token = _bearer_token(authorization)
+    try:
+        rows = await persistence.get_history(token, 100)
+        return persistence.build_dashboard(rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Persistence service error: {exc}") from exc
+
+
+@app.delete("/api/history/{run_id}")
+async def delete_history(run_id: str, authorization: str | None = Header(default=None)):
+    _require_persistence()
+    token = _bearer_token(authorization)
+    try:
+        await persistence.delete_run(token, run_id)
+        return {"deleted": True}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Persistence service error: {exc}") from exc
 
 
 @app.post("/api/vrp/solve")
