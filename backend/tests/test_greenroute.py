@@ -8,6 +8,7 @@ from app.services.carbon import build_vehicle_profile, estimate_trip_metrics, ge
 from app.services.demo import calculate_demo_routes, geocode_demo
 from app.services.persistence import SupabasePersistence
 from app.services.scoring import build_recommendations
+from app.services.tomtom import TomTomClient
 
 
 class GreenRouteCoreTests(unittest.TestCase):
@@ -17,6 +18,28 @@ class GreenRouteCoreTests(unittest.TestCase):
         routes = calculate_demo_routes(origin, destination)
         self.assertEqual(len(routes), 4)
         self.assertTrue(all(route['distance_km'] > 0 for route in routes))
+
+    def test_tomtom_search_parser_keeps_poi_and_exact_coordinates(self):
+        payload = {
+            'results': [{
+                'id': 'poi-123',
+                'type': 'POI',
+                'poi': {'name': 'Sri Manakula Vinayagar Engineering College'},
+                'position': {'lat': 11.9145, 'lon': 79.6348},
+                'address': {
+                    'freeformAddress': 'Madagadipet, Puducherry 605107',
+                    'postalCode': '605107',
+                    'municipality': 'Madagadipet',
+                    'countrySubdivisionName': 'Puducherry',
+                },
+            }]
+        }
+        results = TomTomClient._parse_search_results(payload, 'SMVEC')
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['label'], 'Sri Manakula Vinayagar Engineering College')
+        self.assertEqual(results[0]['postal_code'], '605107')
+        self.assertAlmostEqual(results[0]['lat'], 11.9145)
+        self.assertAlmostEqual(results[0]['lon'], 79.6348)
 
     def test_heavier_load_increases_estimated_fuel(self):
         profile = get_vehicle_profile('lcv')

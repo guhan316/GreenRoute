@@ -4,7 +4,8 @@ import httpx
 
 
 GEOCODING_URL = 'https://api.tomtom.com/maps/orbis/places/geocode'
-SEARCH_URL = 'https://api.tomtom.com/maps/orbis/places/search/{query}.json'
+SEARCH_V2_URL = 'https://api.tomtom.com/search/2/search/{query}.json'
+SEARCH_ORBIS_URL = 'https://api.tomtom.com/maps/orbis/places/search/{query}.json'
 ROUTING_URL = 'https://api.tomtom.com/maps/orbis/routing/routes/calculate'
 
 
@@ -14,24 +15,8 @@ class TomTomClient:
             raise ValueError('TomTom API key is not configured')
         self.api_key = api_key
 
-    async def search_places(self, query: str, limit: int = 6) -> list[dict]:
-        query = query.strip()
-        if len(query) < 2:
-            return []
-        url = SEARCH_URL.format(query=quote(query, safe=''))
-        params = {
-            'key': self.api_key,
-            'apiVersion': '1',
-            'limit': max(1, min(limit, 10)),
-            'countrySet': 'IN',
-            'language': 'en-IN',
-            'extendedPostalCodesFor': 'POI,PAD,Addr',
-        }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-
+    @staticmethod
+    def _parse_search_results(data: dict, query: str) -> list[dict]:
         results = []
         for item in data.get('results', []):
             position = item.get('position') or {}
@@ -54,6 +39,39 @@ class TomTomClient:
                 'state': address.get('countrySubdivisionName') or address.get('countrySubdivision'),
             })
         return results
+
+    async def search_places(self, query: str, limit: int = 6) -> list[dict]:
+        query = query.strip()
+        if len(query) < 2:
+            return []
+
+        encoded_query = quote(query, safe='')
+        limit = max(1, min(limit, 10))
+        stable_params = {
+            'key': self.api_key,
+            'limit': limit,
+            'countrySet': 'IN',
+            'typeahead': 'true',
+            'idxSet': 'POI,PAD,Addr,Geo,Str',
+        }
+        orbis_params = {
+            **stable_params,
+            'apiVersion': '1',
+        }
+
+        errors = []
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            stable_response = await client.get(SEARCH_V2_URL.format(query=encoded_query), params=stable_params)
+            if stable_response.is_success:
+                return self._parse_search_results(stable_response.json(), query)
+            errors.append(f'Search v2 returned {stable_response.status_code}')
+
+            orbis_response = await client.get(SEARCH_ORBIS_URL.format(query=encoded_query), params=orbis_params)
+            if orbis_response.is_success:
+                return self._parse_search_results(orbis_response.json(), query)
+            errors.append(f'Orbis Search returned {orbis_response.status_code}')
+
+        raise ValueError('TomTom place search is unavailable (' + '; '.join(errors) + ')')
 
     async def resolve_location(self, value) -> dict:
         if hasattr(value, 'model_dump'):
