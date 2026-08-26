@@ -2,58 +2,87 @@ import { useEffect, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl'
 
 const ROUTE_COLORS = {
-  fastest: '#55a7ff',
-  balanced: '#ffbf5b',
-  greenest: '#35df8a',
+  fastest: '#4c9dff',
+  balanced: '#f3b94f',
+  greenest: '#28d77f',
 }
 
-const PRIMARY_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
-const FALLBACK_STYLE = {
+const BASE_STYLE = {
   version: 8,
   sources: {
     osm: {
       type: 'raster',
       tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
+      maxzoom: 19,
       attribution: '© OpenStreetMap contributors',
     },
   },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+  layers: [
+    {
+      id: 'osm',
+      type: 'raster',
+      source: 'osm',
+      paint: {
+        'raster-opacity': 1,
+        'raster-saturation': -0.08,
+        'raster-contrast': 0.03,
+      },
+    },
+  ],
+}
+
+function makeMarker(kind, label) {
+  const element = document.createElement('div')
+  element.className = `route-endpoint-marker ${kind}`
+  element.innerHTML = `<span>${kind === 'origin' ? 'A' : 'B'}</span>`
+  element.setAttribute('aria-label', label)
+  return element
 }
 
 export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
+  const markersRef = useRef([])
   const stateRef = useRef({ routes: [], selectedKind: 'balanced', origin: null, destination: null })
-  const fallbackRef = useRef(false)
-  const errorCountRef = useRef(0)
+  const fitSignatureRef = useRef('')
 
   stateRef.current = { routes: routes || [], selectedKind, origin, destination }
 
-  function syncLayers(map) {
+  function clearMarkers() {
+    markersRef.current.forEach((marker) => marker.remove())
+    markersRef.current = []
+  }
+
+  function syncMap(map, { refit = false } = {}) {
     if (!map?.isStyleLoaded()) return
+
     const state = stateRef.current
     const features = (state.routes || [])
-      .filter((route) => route.coordinates?.length > 1)
+      .filter((route) => Array.isArray(route.coordinates) && route.coordinates.length > 1)
       .map((route) => ({
         type: 'Feature',
         properties: { kind: route.kind },
         geometry: { type: 'LineString', coordinates: route.coordinates },
       }))
 
-    const routeData = { type: 'FeatureCollection', features }
-    const routeSource = map.getSource('greenroute-routes')
-    if (routeSource) routeSource.setData(routeData)
+    const data = { type: 'FeatureCollection', features }
+    const source = map.getSource('greenroute-routes')
+    if (source) source.setData(data)
     else {
-      map.addSource('greenroute-routes', { type: 'geojson', data: routeData })
+      map.addSource('greenroute-routes', { type: 'geojson', data })
       map.addLayer({
-        id: 'greenroute-routes-shadow',
+        id: 'greenroute-route-shadow',
         type: 'line',
         source: 'greenroute-routes',
-        paint: { 'line-color': '#04100b', 'line-width': 10, 'line-opacity': 0.55 },
+        paint: {
+          'line-color': '#0a1712',
+          'line-width': 8,
+          'line-opacity': 0.42,
+        },
       })
       map.addLayer({
-        id: 'greenroute-routes',
+        id: 'greenroute-route-alternatives',
         type: 'line',
         source: 'greenroute-routes',
         paint: {
@@ -63,125 +92,122 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
             'balanced', ROUTE_COLORS.balanced,
             ROUTE_COLORS.greenest,
           ],
-          'line-width': ['case', ['==', ['get', 'kind'], state.selectedKind], 6, 3.5],
-          'line-opacity': ['case', ['==', ['get', 'kind'], state.selectedKind], 1, 0.55],
-        },
-      })
-    }
-
-    if (map.getLayer('greenroute-routes')) {
-      map.setPaintProperty('greenroute-routes', 'line-width', [
-        'case', ['==', ['get', 'kind'], state.selectedKind], 6, 3.5,
-      ])
-      map.setPaintProperty('greenroute-routes', 'line-opacity', [
-        'case', ['==', ['get', 'kind'], state.selectedKind], 1, 0.55,
-      ])
-    }
-
-    const endpoints = []
-    if (state.origin?.lat != null && state.origin?.lon != null) {
-      endpoints.push({
-        type: 'Feature',
-        properties: { kind: 'origin', label: state.origin.address || state.origin.label || 'Pickup' },
-        geometry: { type: 'Point', coordinates: [state.origin.lon, state.origin.lat] },
-      })
-    }
-    if (state.destination?.lat != null && state.destination?.lon != null) {
-      endpoints.push({
-        type: 'Feature',
-        properties: { kind: 'destination', label: state.destination.address || state.destination.label || 'Drop' },
-        geometry: { type: 'Point', coordinates: [state.destination.lon, state.destination.lat] },
-      })
-    }
-
-    const endpointData = { type: 'FeatureCollection', features: endpoints }
-    const endpointSource = map.getSource('greenroute-endpoints')
-    if (endpointSource) endpointSource.setData(endpointData)
-    else {
-      map.addSource('greenroute-endpoints', { type: 'geojson', data: endpointData })
-      map.addLayer({
-        id: 'greenroute-endpoints-halo',
-        type: 'circle',
-        source: 'greenroute-endpoints',
-        paint: {
-          'circle-radius': 13,
-          'circle-color': ['match', ['get', 'kind'], 'origin', '#35df8a', '#ffbf5b'],
-          'circle-opacity': 0.18,
+          'line-width': 4,
+          'line-opacity': 0.42,
         },
       })
       map.addLayer({
-        id: 'greenroute-endpoints',
-        type: 'circle',
-        source: 'greenroute-endpoints',
+        id: 'greenroute-route-selected',
+        type: 'line',
+        source: 'greenroute-routes',
+        filter: ['==', ['get', 'kind'], state.selectedKind],
         paint: {
-          'circle-radius': 6,
-          'circle-color': ['match', ['get', 'kind'], 'origin', '#35df8a', '#ffbf5b'],
-          'circle-stroke-color': '#06100c',
-          'circle-stroke-width': 2,
+          'line-color': [
+            'match', ['get', 'kind'],
+            'fastest', ROUTE_COLORS.fastest,
+            'balanced', ROUTE_COLORS.balanced,
+            ROUTE_COLORS.greenest,
+          ],
+          'line-width': 7,
+          'line-opacity': 1,
         },
       })
     }
 
-    const boundsPoints = features.flatMap((feature) => feature.geometry.coordinates)
-    endpoints.forEach((feature) => boundsPoints.push(feature.geometry.coordinates))
-    if (boundsPoints.length) {
-      const bounds = boundsPoints.reduce(
-        (acc, coordinate) => acc.extend(coordinate),
-        new maplibregl.LngLatBounds(boundsPoints[0], boundsPoints[0]),
+    if (map.getLayer('greenroute-route-selected')) {
+      map.setFilter('greenroute-route-selected', ['==', ['get', 'kind'], state.selectedKind])
+    }
+
+    clearMarkers()
+    const endpointPoints = []
+    const addEndpoint = (place, kind, fallbackLabel) => {
+      if (place?.lat == null || place?.lon == null) return
+      const label = place.address || place.label || fallbackLabel
+      const coordinates = [Number(place.lon), Number(place.lat)]
+      endpointPoints.push(coordinates)
+      const popup = new maplibregl.Popup({ offset: 24, closeButton: false }).setHTML(
+        `<strong>${kind === 'origin' ? 'Pickup' : 'Delivery'}</strong><br/><span>${label}</span>`,
       )
-      map.fitBounds(bounds, { padding: 72, duration: 900, pitch: fallbackRef.current ? 20 : 42, maxZoom: 14 })
+      const marker = new maplibregl.Marker({ element: makeMarker(kind, label), anchor: 'bottom' })
+        .setLngLat(coordinates)
+        .setPopup(popup)
+        .addTo(map)
+      markersRef.current.push(marker)
     }
+
+    addEndpoint(state.origin, 'origin', 'Pickup')
+    addEndpoint(state.destination, 'destination', 'Delivery')
+
+    const routePoints = features.flatMap((feature) => feature.geometry.coordinates)
+    const allPoints = [...routePoints, ...endpointPoints]
+    if (!allPoints.length) return
+
+    const signature = `${allPoints[0]?.join(',')}|${allPoints[allPoints.length - 1]?.join(',')}|${features.length}`
+    if (!refit && fitSignatureRef.current === signature) return
+    fitSignatureRef.current = signature
+
+    const bounds = allPoints.reduce(
+      (acc, coordinate) => acc.extend(coordinate),
+      new maplibregl.LngLatBounds(allPoints[0], allPoints[0]),
+    )
+    map.fitBounds(bounds, {
+      padding: { top: 72, right: 72, bottom: 76, left: 72 },
+      duration: 750,
+      maxZoom: 15,
+    })
   }
 
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return
 
-    const container = containerRef.current
     const map = new maplibregl.Map({
-      container,
-      style: PRIMARY_STYLE,
-      center: [78.9629, 20.5937],
-      zoom: 4.2,
-      pitch: 42,
-      bearing: -8,
-      canvasContextAttributes: { antialias: true },
+      container: containerRef.current,
+      style: BASE_STYLE,
+      center: [78.9629, 22.6],
+      zoom: 4.1,
+      pitch: 0,
+      bearing: 0,
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      attributionControl: true,
     })
 
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 110 }), 'bottom-left')
     mapRef.current = map
 
-    const resizeMap = () => requestAnimationFrame(() => mapRef.current?.resize())
-    const onStyleLoad = () => {
-      errorCountRef.current = 0
-      resizeMap()
-      syncLayers(map)
+    const resize = () => requestAnimationFrame(() => mapRef.current?.resize())
+    const onLoad = () => {
+      resize()
+      syncMap(map, { refit: true })
     }
 
-    map.on('style.load', onStyleLoad)
-    map.on('error', () => {
-      if (fallbackRef.current) return
-      errorCountRef.current += 1
-      if (errorCountRef.current >= 6) {
-        fallbackRef.current = true
-        map.setPitch(20)
-        map.setBearing(0)
-        map.setStyle(FALLBACK_STYLE)
-      }
-    })
-
+    map.on('load', onLoad)
     map.on('click', (event) => {
-      const features = map.queryRenderedFeatures(event.point, { layers: map.getLayer('greenroute-routes') ? ['greenroute-routes'] : [] })
-      const kind = features?.[0]?.properties?.kind
+      if (!map.getLayer('greenroute-route-alternatives')) return
+      const hits = map.queryRenderedFeatures(event.point, {
+        layers: ['greenroute-route-selected', 'greenroute-route-alternatives'],
+      })
+      const kind = hits?.[0]?.properties?.kind
       if (kind) onSelectKind?.(kind)
     })
+    map.on('mousemove', (event) => {
+      if (!map.getLayer('greenroute-route-alternatives')) return
+      const hits = map.queryRenderedFeatures(event.point, {
+        layers: ['greenroute-route-selected', 'greenroute-route-alternatives'],
+      })
+      map.getCanvas().style.cursor = hits.length ? 'pointer' : ''
+    })
 
-    const resizeObserver = new ResizeObserver(resizeMap)
-    resizeObserver.observe(container)
-    window.addEventListener('resize', resizeMap)
+    const observer = new ResizeObserver(resize)
+    observer.observe(containerRef.current)
+    window.addEventListener('resize', resize)
 
     return () => {
-      resizeObserver.disconnect()
-      window.removeEventListener('resize', resizeMap)
+      observer.disconnect()
+      window.removeEventListener('resize', resize)
+      clearMarkers()
       map.remove()
       mapRef.current = null
     }
@@ -189,17 +215,25 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
-    if (map.isStyleLoaded()) syncLayers(map)
-  }, [routes, selectedKind, origin, destination])
+    if (!map || !map.isStyleLoaded()) return
+    syncMap(map, { refit: true })
+  }, [routes, origin, destination])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.isStyleLoaded()) return
+    syncMap(map, { refit: false })
+  }, [selectedKind])
 
   return (
     <div className="route-map-shell">
       <div ref={containerRef} className="route-map" />
-      <div className="map-legend" aria-hidden="true">
+      <div className="map-legend">
         <span><i className="pickup-dot" />Pickup</span>
-        <span><i className="drop-dot" />Drop</span>
-        {fallbackRef.current && <span>Fallback basemap</span>}
+        <span><i className="drop-dot" />Delivery</span>
+        <span><i className="fastest-line" />Fastest</span>
+        <span><i className="balanced-line" />Balanced</span>
+        <span><i className="green-line" />Greenest</span>
       </div>
     </div>
   )
