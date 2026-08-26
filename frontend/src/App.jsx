@@ -9,12 +9,6 @@ import VehicleSelector, { inferStage } from './components/VehicleSelector.jsx'
 import { deleteSavedTrip, getDashboard, getHealth, getHistory, getVehicleCatalog, optimizeRoute, saveOptimization } from './lib/api.js'
 import { supabase, supabaseConfigured } from './lib/supabase.js'
 
-const PREVIEW_ROUTES = [
-  { kind: 'fastest', label: 'Fastest', distance_km: 347.8, duration_minutes: 337, fuel_litres: 46.8, fuel_cost: 4329, co2_kg: 125.4, traffic_delay_minutes: 31, coordinates: [[80.2707,13.0827],[79.6,13.05],[78.8,12.95],[77.9,12.9],[77.5946,12.9716]] },
-  { kind: 'balanced', label: 'Balanced', distance_km: 341.2, duration_minutes: 356, fuel_litres: 42.7, fuel_cost: 3949, co2_kg: 114.4, traffic_delay_minutes: 19, coordinates: [[80.2707,13.0827],[79.7,12.75],[78.9,12.65],[78.15,12.72],[77.5946,12.9716]] },
-  { kind: 'greenest', label: 'Greenest', distance_km: 334.6, duration_minutes: 378, fuel_litres: 39.9, fuel_cost: 3688, co2_kg: 106.9, traffic_delay_minutes: 13, coordinates: [[80.2707,13.0827],[79.55,12.55],[78.8,12.45],[78.05,12.55],[77.5946,12.9716]] },
-]
-
 const INITIAL_VEHICLE = {
   catalog_id: null,
   manufacturer: '',
@@ -43,10 +37,13 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
     fuel_cost_saved_vs_fastest: fastestRoute.fuel_cost - route.fuel_cost,
     co2_saved_kg_vs_fastest: fastestRoute.co2_kg - route.co2_kg,
   }
+  const energyQuantity = route.energy_quantity ?? (route.energy_kwh || route.fuel_litres || 0)
+  const energyUnit = route.energy_unit || (route.energy_kwh ? 'kWh' : 'L')
+
   return (
     <button className={`route-card ${active ? 'active' : ''} ${route.kind}`} onClick={onClick} type="button">
       <div className="route-card-head"><span className="route-icon">{icon}</span><div><strong>{route.label}</strong><small>{route.distance_km.toFixed(1)} km</small></div><span className="route-select-indicator">{active ? 'VIEWING' : 'EXPLORE'}</span></div>
-      <div className="route-card-grid"><div><small>ETA</small><b>{formatDuration(route.duration_minutes)}</b></div><div><small>{route.energy_kwh ? 'Energy' : 'Fuel'}</small><b>{route.energy_kwh ? `${route.energy_kwh.toFixed(1)} kWh` : `${route.fuel_litres.toFixed(1)} L`}</b></div><div><small>Cost</small><b>₹{Math.round(route.fuel_cost).toLocaleString('en-IN')}</b></div><div><small>CO₂</small><b>{route.co2_kg.toFixed(1)} kg</b></div></div>
+      <div className="route-card-grid"><div><small>ETA</small><b>{formatDuration(route.duration_minutes)}</b></div><div><small>Energy</small><b>{Number(energyQuantity).toFixed(1)} {energyUnit}</b></div><div><small>Cost</small><b>₹{Math.round(route.fuel_cost).toLocaleString('en-IN')}</b></div><div><small>CO₂</small><b>{route.co2_kg.toFixed(1)} kg</b></div></div>
       <div className="route-meta"><span>Traffic delay {Math.round(route.traffic_delay_minutes || 0)} min</span>{route.kind !== 'fastest' && <span className="route-saving-mini">{Math.max(0, tradeoff.co2_saved_kg_vs_fastest).toFixed(1)} kg CO₂ saved</span>}</div>
     </button>
   )
@@ -54,19 +51,19 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
 
 export default function App() {
   const [form, setForm] = useState({
-    origin_text: 'Aristo Public School, Cuddalore, Tamil Nadu 607104',
-    destination_text: 'Sri Manakula Vinayagar Engineering College, Madagadipet, Puducherry 605107',
+    origin_text: '',
+    destination_text: '',
     origin_place: null,
     destination_place: null,
-    load_kg: 500,
-    fuel_price_per_litre: 92.5,
-    electricity_price_per_kwh: 8,
+    load_kg: '',
+    fuel_price_per_litre: '',
+    electricity_price_per_kwh: '',
     departure_mode: 'now',
     scheduled_departure: '',
     vehicle: INITIAL_VEHICLE,
   })
   const [vehicleCatalog, setVehicleCatalog] = useState([])
-  const [routes, setRoutes] = useState(PREVIEW_ROUTES)
+  const [routes, setRoutes] = useState([])
   const [selectedKind, setSelectedKind] = useState('balanced')
   const [loading, setLoading] = useState(false)
   const [routingMode, setRoutingMode] = useState('checking')
@@ -80,13 +77,19 @@ export default function App() {
   const [dashboard, setDashboard] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
 
-  const selectedRoute = useMemo(() => routes.find((route) => route.kind === selectedKind) || routes[0], [routes, selectedKind])
-  const fastestRoute = useMemo(() => routes.find((route) => route.kind === 'fastest') || routes[0], [routes])
+  const selectedRoute = useMemo(() => routes.find((route) => route.kind === selectedKind) || routes[0] || null, [routes, selectedKind])
+  const fastestRoute = useMemo(() => routes.find((route) => route.kind === 'fastest') || routes[0] || null, [routes])
   const selectedVehicle = form.vehicle
-  const loadRatio = Math.min(140, (form.load_kg / Math.max(selectedVehicle.max_payload_kg || 1, 1)) * 100)
-  const loadInvalid = form.load_kg > (selectedVehicle.max_payload_kg || 0)
+  const loadValue = Number(form.load_kg || 0)
+  const fuelPriceValue = Number(form.fuel_price_per_litre || 0)
+  const electricityPriceValue = Number(form.electricity_price_per_kwh || 0)
+  const gaseousFuel = ['cng', 'lng'].includes(selectedVehicle.fuel_type)
+  const loadRatio = Math.min(140, (loadValue / Math.max(selectedVehicle.max_payload_kg || 1, 1)) * 100)
+  const loadInvalid = loadValue > (selectedVehicle.max_payload_kg || 0)
   const vehicleIncomplete = !selectedVehicle.manufacturer || !selectedVehicle.model || !selectedVehicle.manufacture_year
   const placesIncomplete = routingMode === 'live' && (!form.origin_place || !form.destination_place)
+  const numericIncomplete = loadValue <= 0 || (selectedVehicle.fuel_type === 'electric' ? electricityPriceValue <= 0 : fuelPriceValue <= 0)
+
   const selectedSavings = useMemo(() => {
     if (!selectedRoute || !fastestRoute) return null
     const tradeoff = selectedRoute.tradeoff
@@ -116,11 +119,11 @@ export default function App() {
       setRoutingMode(health.routing_mode)
       setVehicleCatalog(catalogData.vehicles || [])
       setMessage(health.routing_mode === 'live'
-        ? 'Live mode ready — search and select exact TomTom places, then choose the real vehicle identity.'
+        ? 'Live mode ready — choose exact pickup and delivery points, then enter the actual shipment and vehicle details.'
         : 'Demo mode ready — precise TomTom place search requires the live API key.')
     }).catch(() => {
       setRoutingMode('offline')
-      setMessage('Backend is offline. Preview routes remain available while you start FastAPI.')
+      setMessage('Backend is offline. Start the GreenRoute API to search places and optimize routes.')
     })
   }, [])
 
@@ -139,10 +142,7 @@ export default function App() {
 
   const change = (event) => {
     const { name, value } = event.target
-    setForm((current) => ({
-      ...current,
-      [name]: ['load_kg', 'fuel_price_per_litre', 'electricity_price_per_kwh'].includes(name) ? Number(value) : value,
-    }))
+    setForm((current) => ({ ...current, [name]: value }))
   }
 
   function changeLocationText(kind, value) {
@@ -167,8 +167,12 @@ export default function App() {
       setMessage('Select the vehicle company, exact model/variant and manufacturing year before optimizing.')
       return
     }
+    if (numericIncomplete) {
+      setMessage('Enter the shipment load and the applicable fuel or electricity price before optimizing.')
+      return
+    }
     if (loadInvalid) {
-      setMessage(`${selectedVehicle.manufacturer} ${selectedVehicle.model} supports the entered rated payload of ${Number(selectedVehicle.max_payload_kg).toLocaleString('en-IN')} kg. Reduce the shipment load or correct the vehicle payload specification.`)
+      setMessage(`${selectedVehicle.manufacturer} ${selectedVehicle.model} has an entered rated payload of ${Number(selectedVehicle.max_payload_kg).toLocaleString('en-IN')} kg. Reduce the shipment load or correct the vehicle payload specification.`)
       return
     }
 
@@ -183,10 +187,10 @@ export default function App() {
       const requestPayload = {
         origin: form.origin_place || form.origin_text,
         destination: form.destination_place || form.destination_text,
-        load_kg: form.load_kg,
+        load_kg: loadValue,
         vehicle,
-        fuel_price_per_litre: form.fuel_price_per_litre,
-        electricity_price_per_kwh: form.electricity_price_per_kwh,
+        fuel_price_per_litre: selectedVehicle.fuel_type === 'electric' ? 1 : fuelPriceValue,
+        electricity_price_per_kwh: selectedVehicle.fuel_type === 'electric' ? electricityPriceValue : 1,
         departure_time: departureTime,
       }
       const data = await optimizeRoute(requestPayload)
@@ -197,13 +201,13 @@ export default function App() {
       setLastOptimizationForm(requestPayload)
       setMessage(`${data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed · ${data.notice}`)
     } catch (error) {
-      setMessage(`${error.message}. Keeping the last available routes on screen.`)
+      setMessage(error.message)
     } finally { setLoading(false) }
   }
 
   async function saveTrip() {
     if (!session?.access_token) { setAuthOpen(true); setMessage('Sign in first, then GreenRoute can save this route decision to your private trip history.'); return }
-    if (!lastOptimization || !lastOptimizationForm) { setMessage('Run an optimization before saving a trip.'); return }
+    if (!lastOptimization || !lastOptimizationForm || !selectedRoute) { setMessage('Run an optimization before saving a trip.'); return }
     setSaving(true)
     try {
       await saveOptimization({ form: lastOptimizationForm, optimization: lastOptimization, selected_strategy: selectedKind }, session.access_token)
@@ -235,27 +239,39 @@ export default function App() {
           <form className="planner-form glass-panel v2-form" onSubmit={submit}>
             <div className="form-title"><span>01</span><div><h3>Shipment & fleet details</h3><p>Select exact places and the actual vehicle used for this trip.</p></div></div>
 
-            <LocationSearch label="From — exact pickup point" text={form.origin_text} selected={form.origin_place} onTextChange={(value) => changeLocationText('origin', value)} onSelect={(place) => selectLocation('origin', place)} placeholder="School, warehouse, address, pincode…" />
-            <LocationSearch label="To — exact delivery point" text={form.destination_text} selected={form.destination_place} onTextChange={(value) => changeLocationText('destination', value)} onSelect={(place) => selectLocation('destination', place)} placeholder="College, factory, address, pincode…" />
+            <LocationSearch label="From — exact pickup point" text={form.origin_text} selected={form.origin_place} onTextChange={(value) => changeLocationText('origin', value)} onSelect={(place) => selectLocation('origin', place)} placeholder="Search school, warehouse, street, address or pincode…" />
+            <LocationSearch label="To — exact delivery point" text={form.destination_text} selected={form.destination_place} onTextChange={(value) => changeLocationText('destination', value)} onSelect={(place) => selectLocation('destination', place)} placeholder="Search college, factory, street, address or pincode…" />
 
-            <div className="two-col"><label>Shipment load (kg)<input type="number" min="1" step="1" name="load_kg" value={form.load_kg} onChange={change} required /></label>{form.vehicle.fuel_type === 'electric' ? <label>Electricity price (₹/kWh)<input type="number" min="1" step="0.1" name="electricity_price_per_kwh" value={form.electricity_price_per_kwh} onChange={change} required /></label> : <label>Fuel price (₹/L)<input type="number" min="1" step="0.1" name="fuel_price_per_litre" value={form.fuel_price_per_litre} onChange={change} required /></label>}</div>
+            <div className="two-col">
+              <label>Shipment load (kg)<input type="number" min="1" step="1" name="load_kg" value={form.load_kg} onChange={change} placeholder="e.g. 500" required /></label>
+              {form.vehicle.fuel_type === 'electric'
+                ? <label>Electricity price (₹/kWh)<input type="number" min="0.01" step="0.01" name="electricity_price_per_kwh" value={form.electricity_price_per_kwh} onChange={change} placeholder="e.g. 8.00" required /></label>
+                : <label>Fuel price (₹/{gaseousFuel ? 'kg' : 'L'})<input type="number" min="0.01" step="0.01" name="fuel_price_per_litre" value={form.fuel_price_per_litre} onChange={change} placeholder={gaseousFuel ? 'e.g. 86.00' : 'e.g. 92.50'} required /></label>}
+            </div>
 
             <VehicleSelector catalog={vehicleCatalog} vehicle={form.vehicle} onChange={(vehicle) => setForm((current) => ({ ...current, vehicle }))} />
 
-            <div className={`load-meter ${loadInvalid ? 'over' : ''}`}><div><span>Payload utilisation</span><b>{Math.round(loadRatio)}%</b></div><div className="load-track"><i style={{ width: `${Math.min(100, loadRatio)}%` }} /></div><small>{form.load_kg.toLocaleString('en-IN')} / {Number(selectedVehicle.max_payload_kg || 0).toLocaleString('en-IN')} kg rated payload</small></div>
+            <div className={`load-meter ${loadInvalid ? 'over' : ''}`}><div><span>Payload utilisation</span><b>{Math.round(loadRatio)}%</b></div><div className="load-track"><i style={{ width: `${Math.min(100, loadRatio)}%` }} /></div><small>{loadValue.toLocaleString('en-IN')} / {Number(selectedVehicle.max_payload_kg || 0).toLocaleString('en-IN')} kg rated payload</small></div>
             <div className="departure-block"><span>Departure</span><div className="departure-toggle"><label className={form.departure_mode === 'now' ? 'active' : ''}><input type="radio" name="departure_mode" value="now" checked={form.departure_mode === 'now'} onChange={change} />Now</label><label className={form.departure_mode === 'scheduled' ? 'active' : ''}><input type="radio" name="departure_mode" value="scheduled" checked={form.departure_mode === 'scheduled'} onChange={change} />Schedule</label></div>{form.departure_mode === 'scheduled' && <input type="datetime-local" name="scheduled_departure" value={form.scheduled_departure} onChange={change} required />}</div>
-            <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete} type="submit">{loading ? 'Optimizing…' : 'Optimize exact route'}<span>→</span></button>
+            <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete || numericIncomplete} type="submit">{loading ? 'Optimizing…' : 'Optimize exact route'}<span>→</span></button>
             {placesIncomplete && <p className="form-warning">Choose a TomTom suggestion for both locations to lock exact coordinates.</p>}
             {loadInvalid && <p className="form-warning">Shipment exceeds the vehicle's entered rated payload.</p>}
           </form>
-          <div className="map-panel glass-panel"><div className="map-topline"><div><span className="pulse-dot" /> Interactive route space</div><span>Drag · zoom · tilt</span></div><RouteMap routes={routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={lastOptimization?.origin} destination={lastOptimization?.destination} />{selectedRoute && <div className="map-float-card"><small>Selected strategy</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}</div>
+
+          <div className="map-panel glass-panel map-panel-v3">
+            <div className="map-topline"><div><span className="pulse-dot" /> Live route map</div><span>Drag · zoom · click a route</span></div>
+            <RouteMap routes={routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={lastOptimization?.origin} destination={lastOptimization?.destination} />
+            {!lastOptimization && <div className="map-empty-state"><b>Choose pickup & delivery points</b><span>Your actual TomTom route geometry will appear here after optimization.</span></div>}
+            {selectedRoute && <div className="map-float-card"><small>Selected strategy</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
+          </div>
         </div>
-        <div className="route-cards">{routes.map((route) => <RouteCard key={route.kind} route={route} fastestRoute={fastestRoute} active={selectedKind === route.kind} onClick={() => setSelectedKind(route.kind)} />)}</div>
-        <div id="intelligence"><RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} /></div>
-        <div className="save-trip-bar glass-panel"><div><span>CLOUD TRIP MEMORY</span><strong>{lastOptimization ? `Save ${selectedRoute.label} as the chosen strategy` : 'Optimize a real trip to enable saving'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Add the Supabase publishable key to enable cloud sync.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save Trip ↗' : 'Sign in to save'}</button></div>
+
+        {routes.length > 0 && fastestRoute && <div className="route-cards">{routes.map((route) => <RouteCard key={route.kind} route={route} fastestRoute={fastestRoute} active={selectedKind === route.kind} onClick={() => setSelectedKind(route.kind)} />)}</div>}
+        {selectedRoute && fastestRoute && <div id="intelligence"><RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} /></div>}
+        <div className="save-trip-bar glass-panel"><div><span>CLOUD TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Optimize a real trip to enable saving'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Add the Supabase publishable key to enable cloud sync.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save Trip ↗' : 'Sign in to save'}</button></div>
       </section>
 
-      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every route explains its trade-off.</h2><p>GreenRoute estimates energy from the actual vehicle profile and keeps Bharat Stage classification separate from fuel CO₂ accounting, so older vehicles are not assigned fake chemistry factors.</p>{selectedSavings && selectedKind !== 'fastest' && <p className="impact-saving">Choose {selectedRoute.label} and you currently trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg CO₂</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
+      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every route explains its trade-off.</h2><p>GreenRoute estimates energy from the actual vehicle profile and keeps Bharat Stage classification separate from fuel CO₂ accounting, so older vehicles are not assigned fake chemistry factors.</p>{selectedSavings && selectedKind !== 'fastest' && selectedRoute && <p className="impact-saving">Choose {selectedRoute.label} and you currently trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg CO₂</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
 
       <HistoryDashboard session={session} dashboard={dashboard} trips={trips} loading={historyLoading} onRefresh={() => loadCloudData(session)} onDelete={deleteTrip} />
       <footer><div><span className="brand-mark small">G</span><b>GreenRoute</b></div><p>Indian road logistics · exact POI routing · vehicle-aware carbon analytics · Supabase-backed history</p></footer>
