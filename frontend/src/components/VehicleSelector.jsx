@@ -43,7 +43,7 @@ export default function VehicleSelector({ catalog, vehicle, onChange }) {
 
   function selectModel(event) {
     const id = event.target.value
-    if (id === 'custom') { patch({ catalog_id: null, model: '' }); return }
+    if (id === 'custom') { patch({ catalog_id: 'custom', model: '' }); return }
     const item = catalog.find((entry) => entry.id === id)
     if (!item) return
     const defaults = CATEGORY_DEFAULTS[item.category] || CATEGORY_DEFAULTS.lcv
@@ -67,6 +67,7 @@ export default function VehicleSelector({ catalog, vehicle, onChange }) {
     ? normalizeFuels(selectedCatalog.fuel_types)
     : ['diesel', 'petrol', 'cng', 'lng', 'electric']
   const gaseousFuel = ['cng', 'lng'].includes(vehicle.fuel_type)
+  const customVariant = vehicle.catalog_id === 'custom'
 
   return (
     <div className="vehicle-selector">
@@ -79,7 +80,7 @@ export default function VehicleSelector({ catalog, vehicle, onChange }) {
         <label>Model{vehicle.manufacturer === 'Other / Custom' || (!models.length && vehicle.manufacturer) ? <input value={vehicle.model} onChange={(e) => patch({ model: e.target.value, catalog_id: null })} placeholder="Exact model from RC" required /> : <select value={vehicle.catalog_id || ''} onChange={selectModel} disabled={!vehicle.manufacturer} required><option value="">Select model</option>{models.map((item) => <option key={item.id} value={item.id}>{item.model}</option>)}<option value="custom">Other model / variant</option></select>}</label>
       </div>
       {vehicle.manufacturer !== 'Other / Custom' && vehicle.manufacturer && !vehicle.catalog_id && models.length > 0 && vehicle.model === '' ? null : <>
-        {vehicle.manufacturer !== 'Other / Custom' && !vehicle.catalog_id && vehicle.manufacturer && <label>Exact model / variant<input value={vehicle.model} onChange={(e) => patch({ model: e.target.value })} placeholder="e.g. Intra V30, 2823C CBC" required /></label>}
+        {vehicle.manufacturer !== 'Other / Custom' && (customVariant || !vehicle.catalog_id) && vehicle.manufacturer && <label>Exact model / variant<input value={vehicle.model} onChange={(e) => patch({ model: e.target.value })} placeholder="e.g. Intra V30, 2823C CBC" required /></label>}
         <div className="three-col vehicle-spec-row">
           <label>Manufacturing year<input type="number" min="1990" max="2100" value={vehicle.manufacture_year} onChange={(e) => patch({ manufacture_year: Number(e.target.value) })} required /></label>
           <label>Fuel<select value={vehicle.fuel_type} onChange={(e) => patch({ fuel_type: e.target.value })} required>{fuels.map((fuel) => <option key={fuel} value={fuel}>{fuel.toUpperCase()}</option>)}</select></label>
