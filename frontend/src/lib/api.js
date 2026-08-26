@@ -19,6 +19,17 @@ export async function optimizeRoute(payload) {
   return parseResponse(response, 'Unable to optimize route')
 }
 
+export async function searchPlaces(query, limit = 6) {
+  const params = new URLSearchParams({ q: query, limit: String(limit) })
+  const response = await fetch(`${API_BASE_URL}/api/places/search?${params}`)
+  return parseResponse(response, 'Unable to search locations')
+}
+
+export async function getVehicleCatalog() {
+  const response = await fetch(`${API_BASE_URL}/api/vehicle-catalog`)
+  return parseResponse(response, 'Unable to load vehicle catalog')
+}
+
 export async function saveOptimization(payload, accessToken) {
   const response = await fetch(`${API_BASE_URL}/api/history/save`, {
     method: 'POST',
