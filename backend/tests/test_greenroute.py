@@ -43,6 +43,11 @@ class GreenRouteCoreTests(unittest.TestCase):
         self.assertEqual(result["fastest"]["candidate_id"], "fast")
         self.assertEqual(result["balanced"]["candidate_id"], "balanced")
         self.assertEqual(result["greenest"]["candidate_id"], "green")
+        self.assertEqual(result["fastest"]["tradeoff"]["extra_minutes_vs_fastest"], 0)
+        self.assertGreater(result["balanced"]["tradeoff"]["fuel_cost_saved_vs_fastest"], 0)
+        self.assertGreater(result["greenest"]["tradeoff"]["co2_saved_pct_vs_fastest"], 0)
+        self.assertIn("40% time", result["balanced"]["reason"])
+        self.assertIn("sustainability", result["greenest"]["best_for"].lower())
 
 
 class GreenRouteApiTests(unittest.TestCase):
@@ -73,10 +78,14 @@ class GreenRouteApiTests(unittest.TestCase):
         data = response.json()
         self.assertGreaterEqual(data["candidate_count"], 3)
         self.assertEqual(set(data["recommendations"]), {"fastest", "balanced", "greenest"})
+        self.assertEqual(data["comparison_baseline"], "fastest")
         for route in data["recommendations"].values():
             self.assertGreater(route["fuel_litres"], 0)
             self.assertGreater(route["co2_kg"], 0)
             self.assertGreater(len(route["coordinates"]), 1)
+            self.assertIn("tradeoff", route)
+            self.assertIn("reason", route)
+            self.assertIn("best_for", route)
 
 
 if __name__ == "__main__":
