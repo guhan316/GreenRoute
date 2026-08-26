@@ -19,47 +19,54 @@ export function inferStage(year) {
   return 'Pre-BS / BS I-II — verify RC'
 }
 
+function normalizeFuels(fuels = []) {
+  const values = new Set()
+  fuels.forEach((fuel) => {
+    if (fuel === 'bi-fuel') {
+      values.add('petrol')
+      values.add('cng')
+    } else values.add(fuel)
+  })
+  return [...values].filter((fuel) => ['diesel', 'petrol', 'cng', 'lng', 'electric'].includes(fuel))
+}
+
 export default function VehicleSelector({ catalog, vehicle, onChange }) {
   const manufacturers = useMemo(() => [...new Set(catalog.map((item) => item.manufacturer))].sort(), [catalog])
   const models = useMemo(() => catalog.filter((item) => item.manufacturer === vehicle.manufacturer), [catalog, vehicle.manufacturer])
   const selectedCatalog = useMemo(() => catalog.find((item) => item.id === vehicle.catalog_id), [catalog, vehicle.catalog_id])
 
-  function patch(values) {
-    onChange({ ...vehicle, ...values })
-  }
+  function patch(values) { onChange({ ...vehicle, ...values }) }
 
   function selectManufacturer(event) {
-    const manufacturer = event.target.value
-    patch({ manufacturer, model: '', catalog_id: null })
+    patch({ manufacturer: event.target.value, model: '', catalog_id: null })
   }
 
   function selectModel(event) {
     const id = event.target.value
-    if (id === 'custom') {
-      patch({ catalog_id: null, model: '' })
-      return
-    }
+    if (id === 'custom') { patch({ catalog_id: null, model: '' }); return }
     const item = catalog.find((entry) => entry.id === id)
     if (!item) return
     const defaults = CATEGORY_DEFAULTS[item.category] || CATEGORY_DEFAULTS.lcv
-    const payload = item.payload_max_kg || defaults.max_payload_kg
+    const fuels = normalizeFuels(item.fuel_types)
     patch({
       catalog_id: item.id,
       manufacturer: item.manufacturer,
       model: item.model,
       category: item.category,
-      fuel_type: item.fuel_types?.[0] || 'diesel',
-      max_payload_kg: Number(payload),
+      fuel_type: fuels[0] || 'diesel',
+      max_payload_kg: Number(item.payload_max_kg || defaults.max_payload_kg),
       kerb_weight_kg: defaults.kerb_weight_kg,
       base_mileage_kmpl: defaults.base_mileage_kmpl,
+      energy_consumption_kwh_per_km: null,
       max_speed_kmph: defaults.max_speed_kmph,
       emission_stage: '',
     })
   }
 
   const fuels = selectedCatalog?.fuel_types?.length
-    ? selectedCatalog.fuel_types
-    : ['diesel', 'petrol', 'cng', 'lng', 'electric', 'bi-fuel']
+    ? normalizeFuels(selectedCatalog.fuel_types)
+    : ['diesel', 'petrol', 'cng', 'lng', 'electric']
+  const gaseousFuel = ['cng', 'lng'].includes(vehicle.fuel_type)
 
   return (
     <div className="vehicle-selector">
@@ -67,62 +74,27 @@ export default function VehicleSelector({ catalog, vehicle, onChange }) {
         <div><strong>Vehicle identity</strong><small>Manufacturer → model → manufacturing year</small></div>
         <span>{inferStage(vehicle.manufacture_year)}</span>
       </div>
-
       <div className="two-col">
-        <label>Company
-          <select value={vehicle.manufacturer} onChange={selectManufacturer} required>
-            <option value="">Select manufacturer</option>
-            {manufacturers.map((name) => <option key={name} value={name}>{name}</option>)}
-            <option value="Other / Custom">Other / Custom</option>
-          </select>
-        </label>
-        <label>Model
-          {vehicle.manufacturer === 'Other / Custom' || (!models.length && vehicle.manufacturer) ? (
-            <input value={vehicle.model} onChange={(e) => patch({ model: e.target.value, catalog_id: null })} placeholder="Exact model from RC" required />
-          ) : (
-            <select value={vehicle.catalog_id || ''} onChange={selectModel} disabled={!vehicle.manufacturer} required>
-              <option value="">Select model</option>
-              {models.map((item) => <option key={item.id} value={item.id}>{item.model}</option>)}
-              <option value="custom">Other model / variant</option>
-            </select>
-          )}
-        </label>
+        <label>Company<select value={vehicle.manufacturer} onChange={selectManufacturer} required><option value="">Select manufacturer</option>{manufacturers.map((name) => <option key={name} value={name}>{name}</option>)}<option value="Other / Custom">Other / Custom</option></select></label>
+        <label>Model{vehicle.manufacturer === 'Other / Custom' || (!models.length && vehicle.manufacturer) ? <input value={vehicle.model} onChange={(e) => patch({ model: e.target.value, catalog_id: null })} placeholder="Exact model from RC" required /> : <select value={vehicle.catalog_id || ''} onChange={selectModel} disabled={!vehicle.manufacturer} required><option value="">Select model</option>{models.map((item) => <option key={item.id} value={item.id}>{item.model}</option>)}<option value="custom">Other model / variant</option></select>}</label>
       </div>
-
-      {vehicle.manufacturer !== 'Other / Custom' && vehicle.manufacturer && !vehicle.catalog_id && models.length > 0 && vehicle.model === '' ? null : (
-        <>
-          {vehicle.manufacturer !== 'Other / Custom' && !vehicle.catalog_id && vehicle.manufacturer && (
-            <label>Exact model / variant<input value={vehicle.model} onChange={(e) => patch({ model: e.target.value })} placeholder="e.g. Intra V30, 2823C CBC" required /></label>
-          )}
-          <div className="three-col vehicle-spec-row">
-            <label>Manufacturing year<input type="number" min="1990" max="2100" value={vehicle.manufacture_year} onChange={(e) => patch({ manufacture_year: Number(e.target.value) })} required /></label>
-            <label>Fuel
-              <select value={vehicle.fuel_type} onChange={(e) => patch({ fuel_type: e.target.value })} required>
-                {fuels.map((fuel) => <option key={fuel} value={fuel}>{fuel.toUpperCase()}</option>)}
-              </select>
-            </label>
-            <label>Emission standard<input value={vehicle.emission_stage || inferStage(vehicle.manufacture_year)} onChange={(e) => patch({ emission_stage: e.target.value })} placeholder="Verify from RC" /></label>
-          </div>
-
-          <div className="two-col">
-            <label>Rated payload (kg)<input type="number" min="1" value={vehicle.max_payload_kg} onChange={(e) => patch({ max_payload_kg: Number(e.target.value) })} required /></label>
-            <label>Kerb weight (kg)<input type="number" min="1" value={vehicle.kerb_weight_kg} onChange={(e) => patch({ kerb_weight_kg: Number(e.target.value) })} required /></label>
-          </div>
-
-          <div className="two-col">
-            {vehicle.fuel_type === 'electric' ? (
-              <label>Energy use (kWh/km)<input type="number" min="0.01" step="0.01" value={vehicle.energy_consumption_kwh_per_km || ''} onChange={(e) => patch({ energy_consumption_kwh_per_km: Number(e.target.value) })} required /></label>
-            ) : (
-              <label>Real/base mileage (km/L)<input type="number" min="0.1" step="0.1" value={vehicle.base_mileage_kmpl || ''} onChange={(e) => patch({ base_mileage_kmpl: Number(e.target.value) })} required /></label>
-            )}
-            <label>Max governed speed (km/h)<input type="number" min="20" max="160" value={vehicle.max_speed_kmph} onChange={(e) => patch({ max_speed_kmph: Number(e.target.value) })} required /></label>
-          </div>
-
-          <p className="vehicle-method-note">
-            Catalog values are starting points. For a real fleet, use RC/OEM payload and the vehicle's measured mileage. Manufacturing year is used to classify the Bharat Stage baseline; GreenRoute does not fake a different CO₂-per-litre value for each year.
-          </p>
-        </>
-      )}
+      {vehicle.manufacturer !== 'Other / Custom' && vehicle.manufacturer && !vehicle.catalog_id && models.length > 0 && vehicle.model === '' ? null : <>
+        {vehicle.manufacturer !== 'Other / Custom' && !vehicle.catalog_id && vehicle.manufacturer && <label>Exact model / variant<input value={vehicle.model} onChange={(e) => patch({ model: e.target.value })} placeholder="e.g. Intra V30, 2823C CBC" required /></label>}
+        <div className="three-col vehicle-spec-row">
+          <label>Manufacturing year<input type="number" min="1990" max="2100" value={vehicle.manufacture_year} onChange={(e) => patch({ manufacture_year: Number(e.target.value) })} required /></label>
+          <label>Fuel<select value={vehicle.fuel_type} onChange={(e) => patch({ fuel_type: e.target.value })} required>{fuels.map((fuel) => <option key={fuel} value={fuel}>{fuel.toUpperCase()}</option>)}</select></label>
+          <label>Emission standard<input value={vehicle.emission_stage || inferStage(vehicle.manufacture_year)} onChange={(e) => patch({ emission_stage: e.target.value })} placeholder="Verify from RC" /></label>
+        </div>
+        <div className="two-col">
+          <label>Rated payload (kg)<input type="number" min="1" value={vehicle.max_payload_kg} onChange={(e) => patch({ max_payload_kg: Number(e.target.value) })} required /></label>
+          <label>Kerb weight (kg)<input type="number" min="1" value={vehicle.kerb_weight_kg} onChange={(e) => patch({ kerb_weight_kg: Number(e.target.value) })} required /></label>
+        </div>
+        <div className="two-col">
+          {vehicle.fuel_type === 'electric' ? <label>Energy use (kWh/km)<input type="number" min="0.01" step="0.01" value={vehicle.energy_consumption_kwh_per_km || ''} onChange={(e) => patch({ energy_consumption_kwh_per_km: Number(e.target.value) })} required /></label> : <label>Real/base efficiency ({gaseousFuel ? 'km/kg' : 'km/L'})<input type="number" min="0.1" step="0.1" value={vehicle.base_mileage_kmpl || ''} onChange={(e) => patch({ base_mileage_kmpl: Number(e.target.value) })} required /></label>}
+          <label>Max governed speed (km/h)<input type="number" min="20" max="160" value={vehicle.max_speed_kmph} onChange={(e) => patch({ max_speed_kmph: Number(e.target.value) })} required /></label>
+        </div>
+        <p className="vehicle-method-note">Catalog values are starting points, not claimed OEM specs for every variant. Use the RC/OEM payload and measured fleet efficiency where available. Manufacturing year sets a Bharat Stage baseline; direct CO₂ is calculated from the actual fuel/energy consumed.</p>
+      </>}
     </div>
   )
 }
