@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { searchPlaces } from '../lib/api.js'
+import './LocationSearch.css'
 
 export default function LocationSearch({ label, text, selected, onTextChange, onSelect, placeholder }) {
   const inputId = useId()
@@ -119,7 +120,7 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
           aria-activedescendant={results[activeIndex] ? `${listId}-${activeIndex}` : undefined}
           required
         />
-        <i>{busy ? '…' : selected ? '✓' : unresolved ? '⌖' : '⌖'}</i>
+        <i>{busy ? '…' : selected ? '✓' : '⌖'}</i>
       </div>
 
       {selected && (
