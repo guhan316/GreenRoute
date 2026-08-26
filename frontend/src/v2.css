@@ -13,6 +13,7 @@
 .resolved-place { color: #6fa789; font-size: .64rem; font-weight: 600; }
 .location-help { color: #789285; font-size: .63rem; line-height: 1.4; }
 .unresolved-help { color: #d8b86f; }
+.v2-form:has(.location-input-wrap.unresolved) > .optimize-btn + .form-warning { display: none; }
 .place-results { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 7px); padding: 7px; border: 1px solid rgba(173,255,211,.16); border-radius: 15px; background: rgba(5,17,11,.98); box-shadow: 0 24px 70px rgba(0,0,0,.48); max-height: 310px; overflow: auto; backdrop-filter: blur(18px); }
 .place-results button { width: 100%; border: 0; border-radius: 11px; background: transparent; color: #eafff4; display: grid; gap: 3px; text-align: left; padding: 10px 11px; cursor: pointer; }
 .place-results button:hover, .place-results button.active { background: rgba(53,223,138,.1); outline: 1px solid rgba(53,223,138,.12); }
