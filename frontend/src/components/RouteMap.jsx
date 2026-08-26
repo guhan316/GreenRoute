@@ -14,8 +14,9 @@ export default function RouteMap({ routes, selectedKind, onSelectKind }) {
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return
 
+    const container = containerRef.current
     const map = new maplibregl.Map({
-      container: containerRef.current,
+      container,
       style: 'https://tiles.openfreemap.org/styles/liberty',
       center: [78.9629, 20.5937],
       zoom: 4.2,
@@ -27,7 +28,20 @@ export default function RouteMap({ routes, selectedKind, onSelectKind }) {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     mapRef.current = map
 
+    const resizeMap = () => {
+      if (!mapRef.current) return
+      requestAnimationFrame(() => mapRef.current?.resize())
+    }
+
+    map.on('load', resizeMap)
+
+    const resizeObserver = new ResizeObserver(resizeMap)
+    resizeObserver.observe(container)
+    window.addEventListener('resize', resizeMap)
+
     return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', resizeMap)
       map.remove()
       mapRef.current = null
     }
@@ -38,6 +52,8 @@ export default function RouteMap({ routes, selectedKind, onSelectKind }) {
     if (!map || !routes?.length) return
 
     const update = () => {
+      map.resize()
+
       const features = routes
         .filter((route) => route.coordinates?.length > 1)
         .map((route) => ({
