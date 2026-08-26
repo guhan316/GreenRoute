@@ -1,5 +1,4 @@
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -27,20 +26,16 @@ VEHICLES = {
     'trailer': VehicleProfile('trailer', 'Trailer', 28000, 14500, 3.4, 65),
 }
 
-# Tailpipe CO2 factors are primarily fuel-chemistry factors. Bharat Stage/year
-# changes regulated pollutants (NOx/PM/HC/CO) and can influence real efficiency,
-# but it does not justify inventing a different diesel CO2-per-litre factor by year.
-# These remain prototype values until the final BRSR methodology is frozen.
-EMISSION_FACTORS_KG_CO2_PER_LITRE = {
-    'diesel': 2.68,
-    'petrol': 2.31,
-    'cng': 2.74,  # kg CO2 per kg-equivalent is not directly comparable; treat as prototype only
-    'lng': 2.75,
-    'bi-fuel': 2.50,
+# Prototype direct-combustion factors. Liquid fuels are kg CO2/L; natural gas
+# is kg CO2/kg fuel. Freeze final BRSR factors only after source validation.
+FUEL_CO2_FACTORS = {
+    'diesel': {'factor': 2.68, 'unit': 'L'},
+    'petrol': {'factor': 2.31, 'unit': 'L'},
+    'cng': {'factor': 2.75, 'unit': 'kg'},
+    'lng': {'factor': 2.75, 'unit': 'kg'},
 }
 
-# CEA Version 19 reports 0.716 tCO2/MWh for FY 2022-23 including renewables.
-# Keep visible as a dated reporting factor rather than pretending it is timeless.
+# CEA Version 19 FY 2022-23 baseline; kept explicitly dated in the output.
 INDIA_GRID_KG_CO2_PER_KWH = 0.716
 
 
@@ -90,26 +85,16 @@ def build_vehicle_profile(vehicle: Any) -> VehicleProfile:
     )
 
 
-def estimate_trip_metrics(
-    route: dict,
-    profile: VehicleProfile,
-    load_kg: float,
-    fuel_price: float,
-    electricity_price_per_kwh: float = 8.0,
-) -> dict:
+def estimate_trip_metrics(route: dict, profile: VehicleProfile, load_kg: float, fuel_price: float, electricity_price_per_kwh: float = 8.0) -> dict:
     if load_kg > profile.max_payload_kg:
-        raise ValueError(
-            f'Load {load_kg:.0f} kg exceeds {profile.label} payload limit of {profile.max_payload_kg:.0f} kg'
-        )
+        raise ValueError(f'Load {load_kg:.0f} kg exceeds {profile.label} payload limit of {profile.max_payload_kg:.0f} kg')
 
     distance_km = route['distance_km']
     duration_minutes = max(route['duration_minutes'], 1.0)
     traffic_delay_minutes = max(route.get('traffic_delay_minutes', 0.0), 0.0)
     load_ratio = load_kg / profile.max_payload_kg
     delay_ratio = min(traffic_delay_minutes / duration_minutes, 0.8)
-    load_multiplier = 1.0 + (0.24 * load_ratio)
-    traffic_multiplier = 1.0 + (0.45 * delay_ratio)
-    consumption_multiplier = load_multiplier * traffic_multiplier
+    consumption_multiplier = (1.0 + 0.24 * load_ratio) * (1.0 + 0.45 * delay_ratio)
 
     common = {
         **route,
@@ -124,34 +109,43 @@ def estimate_trip_metrics(
     if profile.fuel_type == 'electric':
         if not profile.energy_consumption_kwh_per_km:
             raise ValueError('Electric vehicle energy consumption is required')
-        energy_kwh = distance_km * profile.energy_consumption_kwh_per_km * consumption_multiplier
-        energy_cost = energy_kwh * electricity_price_per_kwh
-        co2_kg = energy_kwh * INDIA_GRID_KG_CO2_PER_KWH
+        quantity = distance_km * profile.energy_consumption_kwh_per_km * consumption_multiplier
+        cost = quantity * electricity_price_per_kwh
+        co2_kg = quantity * INDIA_GRID_KG_CO2_PER_KWH
         return {
             **common,
             'fuel_litres': 0.0,
-            'energy_kwh': round(energy_kwh, 2),
+            'energy_kwh': round(quantity, 2),
+            'energy_quantity': round(quantity, 2),
+            'energy_unit': 'kWh',
             'effective_mileage_kmpl': 0.0,
-            'fuel_cost': round(energy_cost, 2),
+            'effective_efficiency': round(distance_km / max(quantity, 0.001), 2),
+            'fuel_cost': round(cost, 2),
             'co2_kg': round(co2_kg, 2),
-            'emissions_basis': 'India grid electricity factor (CEA baseline; dated factor)',
+            'emissions_basis': 'Electricity consumed × India grid factor (CEA FY 2022-23 baseline)',
         }
 
     if not profile.base_mileage_kmpl:
-        raise ValueError('Vehicle mileage is required for combustion vehicles')
+        raise ValueError('Vehicle efficiency is required for combustion vehicles')
+    factor_info = FUEL_CO2_FACTORS.get(profile.fuel_type)
+    if not factor_info:
+        raise ValueError(f'Carbon factor is not configured for fuel type: {profile.fuel_type}')
 
-    fuel_litres = (distance_km / profile.base_mileage_kmpl) * consumption_multiplier
-    effective_mileage = distance_km / max(fuel_litres, 0.001)
-    fuel_cost = fuel_litres * fuel_price
-    factor = EMISSION_FACTORS_KG_CO2_PER_LITRE.get(profile.fuel_type, 2.68)
-    co2_kg = fuel_litres * factor
+    quantity = (distance_km / profile.base_mileage_kmpl) * consumption_multiplier
+    efficiency = distance_km / max(quantity, 0.001)
+    cost = quantity * fuel_price
+    co2_kg = quantity * factor_info['factor']
+    is_liquid = factor_info['unit'] == 'L'
 
     return {
         **common,
-        'fuel_litres': round(fuel_litres, 2),
+        'fuel_litres': round(quantity, 2) if is_liquid else 0.0,
         'energy_kwh': 0.0,
-        'effective_mileage_kmpl': round(effective_mileage, 2),
-        'fuel_cost': round(fuel_cost, 2),
+        'energy_quantity': round(quantity, 2),
+        'energy_unit': factor_info['unit'],
+        'effective_mileage_kmpl': round(efficiency, 2) if is_liquid else 0.0,
+        'effective_efficiency': round(efficiency, 2),
+        'fuel_cost': round(cost, 2),
         'co2_kg': round(co2_kg, 2),
-        'emissions_basis': 'Fuel consumed × fuel CO2 factor; Bharat Stage tracked separately for pollutant class',
+        'emissions_basis': f"Fuel consumed ({factor_info['unit']}) × {profile.fuel_type.upper()} direct CO2 factor; Bharat Stage tracked separately",
     }
