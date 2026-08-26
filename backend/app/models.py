@@ -16,9 +16,10 @@ class VehicleInput(BaseModel):
     manufacturer: str = Field(min_length=1, max_length=120)
     model: str = Field(min_length=1, max_length=160)
     manufacture_year: int = Field(ge=1990, le=2100)
-    fuel_type: str = Field(pattern='^(diesel|petrol|cng|lng|electric|bi-fuel)$')
+    fuel_type: str = Field(pattern='^(diesel|petrol|cng|lng|electric)$')
     max_payload_kg: float = Field(gt=0, le=80000)
     kerb_weight_kg: float = Field(gt=0, le=80000)
+    # For diesel/petrol this is km/L; for CNG/LNG it is km/kg.
     base_mileage_kmpl: float | None = Field(default=None, gt=0, le=100)
     energy_consumption_kwh_per_km: float | None = Field(default=None, gt=0, le=10)
     max_speed_kmph: int = Field(default=80, gt=0, le=160)
@@ -31,7 +32,7 @@ class VehicleInput(BaseModel):
             if self.energy_consumption_kwh_per_km is None:
                 raise ValueError('Electric vehicles require energy_consumption_kwh_per_km')
         elif self.base_mileage_kmpl is None:
-            raise ValueError('Combustion vehicles require base_mileage_kmpl')
+            raise ValueError('Combustion vehicles require distance-per-fuel-unit efficiency')
         return self
 
 
@@ -41,6 +42,7 @@ class RouteOptimizationRequest(BaseModel):
     load_kg: float = Field(gt=0, le=50000)
     vehicle_type: str | None = None  # legacy compatibility
     vehicle: VehicleInput | None = None
+    # L for diesel/petrol, kg for CNG/LNG. Kept under the legacy field name for API compatibility.
     fuel_price_per_litre: float = Field(default=92.5, gt=0, le=500)
     electricity_price_per_kwh: float = Field(default=8.0, gt=0, le=100)
     departure_time: str = Field(default='now', min_length=3, max_length=64)
