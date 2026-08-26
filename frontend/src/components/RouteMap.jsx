@@ -35,9 +35,21 @@ const BASE_STYLE = {
 function makeMarker(kind, label) {
   const element = document.createElement('div')
   element.className = `route-endpoint-marker ${kind}`
-  element.innerHTML = `<span>${kind === 'origin' ? 'A' : 'B'}</span>`
+  const badge = document.createElement('span')
+  badge.textContent = kind === 'origin' ? 'A' : 'B'
+  element.appendChild(badge)
   element.setAttribute('aria-label', label)
   return element
+}
+
+function makePopupContent(kind, label) {
+  const wrapper = document.createElement('div')
+  const title = document.createElement('strong')
+  const detail = document.createElement('span')
+  title.textContent = kind === 'origin' ? 'Pickup' : 'Delivery'
+  detail.textContent = label
+  wrapper.append(title, document.createElement('br'), detail)
+  return wrapper
 }
 
 export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination }) {
@@ -125,9 +137,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       const label = place.address || place.label || fallbackLabel
       const coordinates = [Number(place.lon), Number(place.lat)]
       endpointPoints.push(coordinates)
-      const popup = new maplibregl.Popup({ offset: 24, closeButton: false }).setHTML(
-        `<strong>${kind === 'origin' ? 'Pickup' : 'Delivery'}</strong><br/><span>${label}</span>`,
-      )
+      const popup = new maplibregl.Popup({ offset: 24, closeButton: false }).setDOMContent(makePopupContent(kind, label))
       const marker = new maplibregl.Marker({ element: makeMarker(kind, label), anchor: 'bottom' })
         .setLngLat(coordinates)
         .setPopup(popup)
