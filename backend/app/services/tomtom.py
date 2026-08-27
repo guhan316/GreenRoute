@@ -75,10 +75,7 @@ class TomTomClient:
             'typeahead': 'true',
             'idxSet': 'POI,PAD,Addr,Geo,Str,XStr,EPP',
         }
-        orbis_params = {
-            **stable_params,
-            'apiVersion': '1',
-        }
+        orbis_params = {**stable_params, 'apiVersion': '1'}
 
         errors = []
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -213,12 +210,38 @@ class TomTomClient:
         return 6371.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
 
     @staticmethod
-    def _route_signature(route: dict) -> tuple:
+    def _geometry_samples(route: dict, sample_count: int = 11) -> list[tuple[float, float]]:
         coordinates = route.get('coordinates') or []
         if len(coordinates) < 2:
-            return ()
-        indexes = sorted({0, len(coordinates) // 4, len(coordinates) // 2, (3 * len(coordinates)) // 4, len(coordinates) - 1})
-        return tuple((round(float(coordinates[i][0]), 4), round(float(coordinates[i][1]), 4)) for i in indexes)
+            return []
+        if len(coordinates) <= sample_count:
+            indexes = range(len(coordinates))
+        else:
+            indexes = [round(i * (len(coordinates) - 1) / (sample_count - 1)) for i in range(sample_count)]
+        return [
+            (float(coordinates[index][0]), float(coordinates[index][1]))
+            for index in indexes
+            if len(coordinates[index]) >= 2
+        ]
+
+    @classmethod
+    def _routes_are_duplicate(cls, left: dict, right: dict) -> bool:
+        distance_tolerance = max(0.5, max(left['distance_km'], right['distance_km']) * 0.0015)
+        duration_tolerance = max(1.5, max(left['duration_minutes'], right['duration_minutes']) * 0.003)
+        if abs(left['distance_km'] - right['distance_km']) > distance_tolerance:
+            return False
+        if abs(left['duration_minutes'] - right['duration_minutes']) > duration_tolerance:
+            return False
+
+        left_samples = cls._geometry_samples(left)
+        right_samples = cls._geometry_samples(right)
+        if not left_samples or len(left_samples) != len(right_samples):
+            return False
+        max_delta = max(
+            math.hypot(a[0] - b[0], a[1] - b[1])
+            for a, b in zip(left_samples, right_samples)
+        )
+        return max_delta < 0.006
 
     @staticmethod
     def _parse_routes(data: dict, route_type: str) -> list[dict]:
@@ -292,21 +315,24 @@ class TomTomClient:
         departure_time: str = 'now',
         combustion: bool = True,
     ) -> list[dict]:
+        straight_line_km = self._straight_line_km(origin, destination)
         async with httpx.AsyncClient(timeout=30.0) as client:
             requests = [
                 self._calculate_route_type(
                     client, origin, destination, vehicle_weight_kg, max_speed_kmph,
-                    departure_time, combustion, 'fast', 2,
+                    departure_time, combustion, 'fast', 5,
                 ),
                 self._calculate_route_type(
                     client, origin, destination, vehicle_weight_kg, max_speed_kmph,
-                    departure_time, combustion, 'efficient', 1,
+                    departure_time, combustion, 'efficient', 4,
                 ),
             ]
-            if self._straight_line_km(origin, destination) <= 350:
+            # TomTom documents short routing as a short/medium-distance option and warns
+            # that it can exceed compute limits on long routes, so keep it bounded.
+            if straight_line_km <= 450:
                 requests.append(self._calculate_route_type(
                     client, origin, destination, vehicle_weight_kg, max_speed_kmph,
-                    departure_time, combustion, 'short', 0,
+                    departure_time, combustion, 'short', 1,
                 ))
             groups = await asyncio.gather(*requests, return_exceptions=True)
 
@@ -320,13 +346,12 @@ class TomTomClient:
             raise ValueError('TomTom returned no usable routes')
 
         unique = []
-        signatures = set()
         for route in all_routes:
-            signature = self._route_signature(route)
-            if not signature or signature in signatures:
+            if any(self._routes_are_duplicate(route, existing) for existing in unique):
                 continue
-            signatures.add(signature)
             unique.append(route)
+            if len(unique) >= 10:
+                break
 
         if not unique:
             raise ValueError('TomTom returned no unique usable routes')
