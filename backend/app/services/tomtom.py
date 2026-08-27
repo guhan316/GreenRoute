@@ -1,3 +1,5 @@
+import asyncio
+import math
 from urllib.parse import quote
 
 import httpx
@@ -96,8 +98,6 @@ class TomTomClient:
             else:
                 errors.append(f'Orbis Search returned {orbis_response.status_code}')
 
-        # A named POI may be absent even when the typed street/address is geocodable.
-        # Return that address match rather than making the user start over.
         try:
             fallback = await self.geocode(query)
             fallback['result_type'] = 'Address fallback'
@@ -204,14 +204,55 @@ class TomTomClient:
             'result_type': 'Address',
         }
 
-    async def calculate_routes(
+    @staticmethod
+    def _straight_line_km(origin: dict, destination: dict) -> float:
+        lat1, lon1 = math.radians(float(origin['lat'])), math.radians(float(origin['lon']))
+        lat2, lon2 = math.radians(float(destination['lat'])), math.radians(float(destination['lon']))
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        return 6371.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
+
+    @staticmethod
+    def _route_signature(route: dict) -> tuple:
+        coordinates = route.get('coordinates') or []
+        if len(coordinates) < 2:
+            return ()
+        indexes = sorted({0, len(coordinates) // 4, len(coordinates) // 2, (3 * len(coordinates)) // 4, len(coordinates) - 1})
+        return tuple((round(float(coordinates[i][0]), 4), round(float(coordinates[i][1]), 4)) for i in indexes)
+
+    @staticmethod
+    def _parse_routes(data: dict, route_type: str) -> list[dict]:
+        parsed = []
+        for index, route in enumerate(data.get('routes', [])):
+            summary = route.get('summary', {})
+            coordinates = []
+            for leg in route.get('legs', []):
+                leg_coordinates = leg.get('path', {}).get('coordinates', [])
+                if coordinates and leg_coordinates and coordinates[-1] == leg_coordinates[0]:
+                    coordinates.extend(leg_coordinates[1:])
+                else:
+                    coordinates.extend(leg_coordinates)
+            parsed.append({
+                'candidate_id': f'{route_type}-{index + 1}',
+                'source_route_type': route_type,
+                'distance_km': round(summary.get('lengthInMeters', 0) / 1000, 2),
+                'duration_minutes': round(summary.get('travelDurationInSeconds', 0) / 60, 2),
+                'traffic_delay_minutes': round(summary.get('trafficDelayDurationInSeconds', 0) / 60, 2),
+                'coordinates': coordinates,
+            })
+        return [route for route in parsed if route['distance_km'] > 0 and len(route['coordinates']) > 1]
+
+    async def _calculate_route_type(
         self,
+        client: httpx.AsyncClient,
         origin: dict,
         destination: dict,
         vehicle_weight_kg: int,
         max_speed_kmph: int,
-        departure_time: str = 'now',
-        combustion: bool = True,
+        departure_time: str,
+        combustion: bool,
+        route_type: str,
+        alternatives: int,
     ) -> list[dict]:
         headers = {
             'Content-Type': 'application/json',
@@ -225,45 +266,68 @@ class TomTomClient:
                 'destination': {'type': 'Point', 'coordinates': [destination['lon'], destination['lat']]},
             },
             'departureDateTime': departure_time or 'now',
-            'routeType': 'fast',
+            'routeType': route_type,
             'travelMode': 'car',
             'traffic': 'live',
-            'maxPathAlternativeRoutes': 4,
+            'maxPathAlternativeRoutes': alternatives,
             'vehicleEngineType': 'combustion' if combustion else 'electric',
             'vehicleWeightInKilograms': max(0, int(vehicle_weight_kg)),
             'vehicleMaxSpeedInKilometersPerHour': max(0, min(int(max_speed_kmph), 250)),
         }
+        response = await client.post(ROUTING_URL, headers=headers, json=payload)
+        if response.is_error:
+            try:
+                detail = response.json().get('detailedError', {}).get('message')
+            except Exception:
+                detail = response.text
+            raise ValueError(detail or f'TomTom {route_type} routing failed ({response.status_code})')
+        return self._parse_routes(response.json(), route_type)
 
+    async def calculate_routes(
+        self,
+        origin: dict,
+        destination: dict,
+        vehicle_weight_kg: int,
+        max_speed_kmph: int,
+        departure_time: str = 'now',
+        combustion: bool = True,
+    ) -> list[dict]:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(ROUTING_URL, headers=headers, json=payload)
-            if response.is_error:
-                try:
-                    detail = response.json().get('detailedError', {}).get('message')
-                except Exception:
-                    detail = response.text
-                raise ValueError(detail or f'TomTom routing failed ({response.status_code})')
-            data = response.json()
+            requests = [
+                self._calculate_route_type(
+                    client, origin, destination, vehicle_weight_kg, max_speed_kmph,
+                    departure_time, combustion, 'fast', 2,
+                ),
+                self._calculate_route_type(
+                    client, origin, destination, vehicle_weight_kg, max_speed_kmph,
+                    departure_time, combustion, 'efficient', 1,
+                ),
+            ]
+            if self._straight_line_km(origin, destination) <= 350:
+                requests.append(self._calculate_route_type(
+                    client, origin, destination, vehicle_weight_kg, max_speed_kmph,
+                    departure_time, combustion, 'short', 0,
+                ))
+            groups = await asyncio.gather(*requests, return_exceptions=True)
 
-        parsed = []
-        for index, route in enumerate(data.get('routes', [])):
-            summary = route.get('summary', {})
-            coordinates = []
-            for leg in route.get('legs', []):
-                leg_coordinates = leg.get('path', {}).get('coordinates', [])
-                if coordinates and leg_coordinates and coordinates[-1] == leg_coordinates[0]:
-                    coordinates.extend(leg_coordinates[1:])
-                else:
-                    coordinates.extend(leg_coordinates)
+        all_routes = []
+        for group in groups:
+            if isinstance(group, Exception):
+                continue
+            all_routes.extend(group)
 
-            parsed.append({
-                'candidate_id': f'candidate-{index + 1}',
-                'distance_km': round(summary.get('lengthInMeters', 0) / 1000, 2),
-                'duration_minutes': round(summary.get('travelDurationInSeconds', 0) / 60, 2),
-                'traffic_delay_minutes': round(summary.get('trafficDelayDurationInSeconds', 0) / 60, 2),
-                'coordinates': coordinates,
-            })
-
-        parsed = [route for route in parsed if route['distance_km'] > 0 and len(route['coordinates']) > 1]
-        if not parsed:
+        if not all_routes:
             raise ValueError('TomTom returned no usable routes')
-        return parsed
+
+        unique = []
+        signatures = set()
+        for route in all_routes:
+            signature = self._route_signature(route)
+            if not signature or signature in signatures:
+                continue
+            signatures.add(signature)
+            unique.append(route)
+
+        if not unique:
+            raise ValueError('TomTom returned no unique usable routes')
+        return unique
