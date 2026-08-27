@@ -147,6 +147,8 @@ export default function App() {
 
   function changeLocationText(kind, value) {
     setForm((current) => ({ ...current, [`${kind}_text`]: value, [`${kind}_place`]: null }))
+    setRoutes([])
+    setLastOptimization(null)
   }
 
   function selectLocation(kind, place) {
@@ -155,12 +157,14 @@ export default function App() {
       [`${kind}_place`]: place,
       [`${kind}_text`]: place.address || place.label,
     }))
+    setRoutes([])
+    setLastOptimization(null)
   }
 
   async function submit(event) {
     event.preventDefault()
     if (placesIncomplete) {
-      setMessage('Choose an exact suggestion for both From and To. GreenRoute will route from those coordinates, not a city centre.')
+      setMessage('Choose an exact suggestion for both From and To, or pin the locations directly on the map.')
       return
     }
     if (vehicleIncomplete) {
@@ -222,6 +226,11 @@ export default function App() {
   }
 
   const modeLabel = routingMode === 'live' ? '● Live traffic' : routingMode === 'demo' ? '◇ Demo mode' : routingMode === 'offline' ? '○ Backend offline' : '… Connecting'
+  const mapStatus = form.origin_place && form.destination_place
+    ? (routes.length ? 'Live road alternatives are shown below.' : 'Both points are pinned. Optimize to replace the dashed preview with live road routes.')
+    : form.origin_place || form.destination_place
+      ? 'One point is pinned. Search or pin the other point.'
+      : 'Search a place or use Pin pickup / Pin delivery directly on the map.'
 
   return (
     <main>
@@ -254,14 +263,14 @@ export default function App() {
             <div className={`load-meter ${loadInvalid ? 'over' : ''}`}><div><span>Payload utilisation</span><b>{Math.round(loadRatio)}%</b></div><div className="load-track"><i style={{ width: `${Math.min(100, loadRatio)}%` }} /></div><small>{loadValue.toLocaleString('en-IN')} / {Number(selectedVehicle.max_payload_kg || 0).toLocaleString('en-IN')} kg rated payload</small></div>
             <div className="departure-block"><span>Departure</span><div className="departure-toggle"><label className={form.departure_mode === 'now' ? 'active' : ''}><input type="radio" name="departure_mode" value="now" checked={form.departure_mode === 'now'} onChange={change} />Now</label><label className={form.departure_mode === 'scheduled' ? 'active' : ''}><input type="radio" name="departure_mode" value="scheduled" checked={form.departure_mode === 'scheduled'} onChange={change} />Schedule</label></div>{form.departure_mode === 'scheduled' && <input type="datetime-local" name="scheduled_departure" value={form.scheduled_departure} onChange={change} required />}</div>
             <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete || numericIncomplete} type="submit">{loading ? 'Optimizing…' : 'Optimize exact route'}<span>→</span></button>
-            {placesIncomplete && <p className="form-warning">Choose a TomTom suggestion for both locations to lock exact coordinates.</p>}
+            {placesIncomplete && <p className="form-warning">Choose a suggestion or pin both locations directly on the map.</p>}
             {loadInvalid && <p className="form-warning">Shipment exceeds the vehicle's entered rated payload.</p>}
           </form>
 
           <div className="map-panel glass-panel map-panel-v3">
-            <div className="map-topline"><div><span className="pulse-dot" /> Live route map</div><span>Drag · zoom · click a route</span></div>
-            <RouteMap routes={routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={lastOptimization?.origin} destination={lastOptimization?.destination} />
-            {!lastOptimization && <div className="map-empty-state"><b>Choose pickup & delivery points</b><span>Your actual TomTom route geometry will appear here after optimization.</span></div>}
+            <div className="map-topline"><div><span className="pulse-dot" /> Interactive route map</div><span>Search · pin · zoom · click a route</span></div>
+            <RouteMap routes={routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={form.origin_place || lastOptimization?.origin} destination={form.destination_place || lastOptimization?.destination} onPickPlace={selectLocation} />
+            {!lastOptimization && <div className="map-empty-state map-guidance"><b>{form.origin_place || form.destination_place ? 'Location preview' : 'Build the trip on the map'}</b><span>{mapStatus}</span></div>}
             {selectedRoute && <div className="map-float-card"><small>Selected strategy</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
           </div>
         </div>
