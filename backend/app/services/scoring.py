@@ -11,6 +11,24 @@ def _percent_change(reference: float, value: float) -> float:
     return ((reference - value) / reference) * 100
 
 
+def _dominates(left: dict, right: dict) -> bool:
+    metrics = ('duration_minutes', 'fuel_cost', 'co2_kg')
+    return (
+        all(left[key] <= right[key] for key in metrics)
+        and any(left[key] < right[key] for key in metrics)
+    )
+
+
+def _pareto_front(routes: list[dict]) -> list[dict]:
+    return [
+        route for route in routes
+        if not any(
+            other.get('candidate_id') != route.get('candidate_id') and _dominates(other, route)
+            for other in routes
+        )
+    ]
+
+
 def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
     extra_minutes = route['duration_minutes'] - fastest['duration_minutes']
     cost_saved = fastest['fuel_cost'] - route['fuel_cost']
@@ -22,19 +40,18 @@ def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
     elif kind == 'balanced':
         if route.get('diversity_selected'):
             reason = (
-                "Best practical middle option among the evaluated routes using GreenRoute's "
-                '40% time, 30% fuel-cost and 30% carbon weighting. A distinct route is preferred '
-                'only when it stays within practical time, cost and carbon guardrails.'
+                "Best non-dominated middle trade-off close to GreenRoute's weighted optimum, "
+                'using 40% time, 30% fuel-cost and 30% carbon.'
             )
         else:
             reason = (
-                "Best overall compromise using GreenRoute's 40% time, 30% fuel-cost and "
-                '30% carbon weighting.'
+                "Best non-dominated compromise using GreenRoute's 40% time, 30% fuel-cost and "
+                '30% carbon weighting. Dominated routes are never promoted just to look different.'
             )
         best_for = 'Everyday logistics where time, operating cost and sustainability all matter'
     else:
         reason = (
-            'Lowest estimated CO2 emissions among the evaluated candidates, with fuel cost '
+            'Lowest estimated CO2 emissions among the non-dominated candidates, with fuel cost '
             'and journey time used as tie-breakers.'
         )
         best_for = 'Planned, bulk and sustainability-prioritised deliveries'
@@ -56,15 +73,6 @@ def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
             ),
         },
     }
-
-
-def _practical_balanced_candidate(route: dict, fastest: dict) -> bool:
-    """Prevent visual diversity from selecting an unreasonable detour."""
-    return (
-        route['duration_minutes'] <= fastest['duration_minutes'] * 1.25
-        and route['fuel_cost'] <= fastest['fuel_cost'] * 1.15
-        and route['co2_kg'] <= fastest['co2_kg'] * 1.15
-    )
 
 
 def build_recommendations(routes: list[dict]) -> dict:
@@ -94,31 +102,24 @@ def build_recommendations(routes: list[dict]) -> dict:
             }
         )
 
+    pareto = _pareto_front(enriched)
     fastest = min(enriched, key=lambda route: route['duration_minutes'])
     greenest = min(
-        enriched,
-        key=lambda route: (
-            route['co2_kg'],
-            route['fuel_cost'],
-            route['duration_minutes'],
-        ),
+        pareto,
+        key=lambda route: (route['co2_kg'], route['fuel_cost'], route['duration_minutes']),
     )
 
-    balanced_best = min(enriched, key=lambda route: route['balanced_score'])
+    balanced_best = min(pareto, key=lambda route: route['balanced_score'])
     balanced = balanced_best
 
-    # The mathematically lowest weighted score can be the exact same physical route as
-    # Fastest or Greenest. For a three-strategy product, prefer a genuinely distinct
-    # middle candidate whenever TomTom returned one that remains operationally sensible.
+    # A distinct middle route is useful only when it is itself Pareto-efficient.
+    # This prevents a slower, more expensive and dirtier route from ever becoming Balanced.
     reserved_ids = {fastest.get('candidate_id'), greenest.get('candidate_id')}
-    practical_distinct = [
-        route for route in enriched
-        if route.get('candidate_id') not in reserved_ids
-        and _practical_balanced_candidate(route, fastest)
-    ]
-    if practical_distinct:
-        alternative = min(practical_distinct, key=lambda route: route['balanced_score'])
-        balanced = {**alternative, 'diversity_selected': True}
+    distinct_pareto = [route for route in pareto if route.get('candidate_id') not in reserved_ids]
+    if distinct_pareto:
+        alternative = min(distinct_pareto, key=lambda route: route['balanced_score'])
+        if alternative['balanced_score'] <= balanced_best['balanced_score'] + 0.12:
+            balanced = {**alternative, 'diversity_selected': True}
 
     recommendations = {
         'fastest': _decorate_recommendation(fastest, 'fastest', fastest),
@@ -126,9 +127,6 @@ def build_recommendations(routes: list[dict]) -> dict:
         'greenest': _decorate_recommendation(greenest, 'greenest', fastest),
     }
 
-    # Be transparent if the routing engine genuinely produced fewer than three useful
-    # physical paths. The frontend can explain the shared route instead of presenting it
-    # as though two identical cards were different roads.
     kinds = ('fastest', 'balanced', 'greenest')
     for kind in kinds:
         candidate_id = recommendations[kind].get('candidate_id')
@@ -145,4 +143,6 @@ def build_recommendations(routes: list[dict]) -> dict:
         'recommendations': recommendations,
         'comparison_baseline': 'fastest',
         'distinct_recommendation_count': len(set(recommendation_ids)),
+        'pareto_candidate_count': len(pareto),
+        'dominated_candidate_count': len(enriched) - len(pareto),
     }
