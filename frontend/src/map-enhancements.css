@@ -1,0 +1,113 @@
+.map-pick-controls {
+  position: absolute;
+  z-index: 7;
+  top: 68px;
+  left: 18px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.map-pick-controls button {
+  border: 1px solid rgba(173,255,211,.18);
+  background: rgba(4,15,10,.88);
+  color: #dff7e9;
+  border-radius: 999px;
+  padding: 8px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: .66rem;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.map-pick-controls button:hover,
+.map-pick-controls button.active {
+  border-color: rgba(53,223,138,.58);
+  background: rgba(13,42,29,.94);
+  transform: translateY(-1px);
+}
+
+.map-pick-controls button b {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(53,223,138,.14);
+  color: #9fffc9;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: .62rem;
+}
+
+.map-pick-controls button:last-child b {
+  background: rgba(255,191,91,.14);
+  color: #ffd994;
+}
+
+.map-pick-hint {
+  position: absolute;
+  z-index: 8;
+  top: 112px;
+  left: 18px;
+  max-width: 290px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(4,15,10,.92);
+  border: 1px solid rgba(53,223,138,.22);
+  color: #cce9da;
+  font-size: .66rem;
+  line-height: 1.45;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+}
+
+.preview-line {
+  width: 18px;
+  height: 0;
+  border-top: 2px dashed #63e7a2;
+}
+
+.map-guidance {
+  top: auto;
+  bottom: 64px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 48px));
+  background: rgba(4,15,10,.9);
+}
+
+.map-guidance b {
+  color: #f1fff7;
+}
+
+.map-guidance span {
+  color: #a8c2b4;
+}
+
+@media (max-width: 560px) {
+  .map-pick-controls {
+    top: 62px;
+    left: 12px;
+    right: 52px;
+    gap: 6px;
+  }
+
+  .map-pick-controls button {
+    padding: 7px 9px;
+    font-size: .61rem;
+  }
+
+  .map-pick-hint {
+    top: 104px;
+    left: 12px;
+    right: 12px;
+    max-width: none;
+  }
+
+  .map-guidance {
+    bottom: 74px;
+  }
+}
