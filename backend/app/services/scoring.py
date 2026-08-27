@@ -118,7 +118,7 @@ def build_recommendations(routes: list[dict]) -> dict:
     distinct_pareto = [route for route in pareto if route.get('candidate_id') not in reserved_ids]
     if distinct_pareto:
         alternative = min(distinct_pareto, key=lambda route: route['balanced_score'])
-        if alternative['balanced_score'] <= balanced_best['balanced_score'] + 0.12:
+        if alternative['balanced_score'] <= balanced_best['balanced_score'] + 0.15:
             balanced = {**alternative, 'diversity_selected': True}
 
     recommendations = {
