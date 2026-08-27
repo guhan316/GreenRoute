@@ -36,7 +36,7 @@ const BASE_STYLE = {
 function makeMarker(kind, label) {
   const element = document.createElement('div')
   element.className = `route-endpoint-marker ${kind}`
-  element.style.zIndex = '12'
+  element.style.zIndex = '20'
   const badge = document.createElement('span')
   badge.textContent = kind === 'origin' ? 'A' : 'B'
   element.appendChild(badge)
@@ -54,9 +54,21 @@ function makePopupContent(kind, label) {
   return wrapper
 }
 
+function cleanCoordinates(input) {
+  if (!Array.isArray(input)) return []
+  return input
+    .map((point) => Array.isArray(point) && point.length >= 2
+      ? [Number(point[0]), Number(point[1])]
+      : null)
+    .filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1])
+      && point[0] >= -180 && point[0] <= 180 && point[1] >= -90 && point[1] <= 90)
+}
+
 export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
+  const mapReadyRef = useRef(false)
+  const pendingRefitRef = useRef(false)
   const markersRef = useRef([])
   const stateRef = useRef({ routes: [], selectedKind: 'balanced', origin: null, destination: null })
   const fitSignatureRef = useRef('')
@@ -79,33 +91,47 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   }
 
   function syncMap(map, { refit = false } = {}) {
-    if (!map?.isStyleLoaded()) return
+    if (!map || !mapReadyRef.current) {
+      pendingRefitRef.current = pendingRefitRef.current || refit
+      return
+    }
 
     const state = stateRef.current
     const features = (state.routes || [])
-      .filter((route) => Array.isArray(route.coordinates) && route.coordinates.length > 1)
-      .map((route) => ({
+      .map((route) => ({ route, coordinates: cleanCoordinates(route.coordinates) }))
+      .filter(({ coordinates }) => coordinates.length > 1)
+      .map(({ route, coordinates }) => ({
         type: 'Feature',
-        properties: { kind: route.kind },
-        geometry: { type: 'LineString', coordinates: route.coordinates },
+        properties: {
+          kind: route.kind,
+          candidateId: route.candidate_id || '',
+          sourceRouteType: route.source_route_type || '',
+        },
+        geometry: { type: 'LineString', coordinates },
       }))
 
     const data = { type: 'FeatureCollection', features }
     const source = map.getSource('greenroute-routes')
-    if (source) source.setData(data)
-    else {
+    if (source) {
+      source.setData(data)
+    } else {
       map.addSource('greenroute-routes', { type: 'geojson', data })
+    }
+
+    if (!map.getLayer('greenroute-route-shadow')) {
       map.addLayer({
         id: 'greenroute-route-shadow',
         type: 'line',
         source: 'greenroute-routes',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#0a1712',
-          'line-width': 9,
-          'line-opacity': 0.46,
+          'line-color': '#07150e',
+          'line-width': 10,
+          'line-opacity': 0.58,
         },
       })
+    }
+    if (!map.getLayer('greenroute-route-alternatives')) {
       map.addLayer({
         id: 'greenroute-route-alternatives',
         type: 'line',
@@ -118,10 +144,12 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
             'balanced', ROUTE_COLORS.balanced,
             ROUTE_COLORS.greenest,
           ],
-          'line-width': 4,
-          'line-opacity': 0.46,
+          'line-width': 5,
+          'line-opacity': 0.72,
         },
       })
+    }
+    if (!map.getLayer('greenroute-route-selected')) {
       map.addLayer({
         id: 'greenroute-route-selected',
         type: 'line',
@@ -135,28 +163,28 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
             'balanced', ROUTE_COLORS.balanced,
             ROUTE_COLORS.greenest,
           ],
-          'line-width': 7,
+          'line-width': 8,
           'line-opacity': 1,
         },
       })
     }
-
-    if (map.getLayer('greenroute-route-selected')) {
-      map.setFilter('greenroute-route-selected', ['==', ['get', 'kind'], state.selectedKind])
-    }
+    map.setFilter('greenroute-route-selected', ['==', ['get', 'kind'], state.selectedKind])
 
     clearMarkers()
     const endpointPoints = []
     const addEndpoint = (place, kind, fallbackLabel) => {
       if (place?.lat == null || place?.lon == null) return
-      const label = place.address || place.label || fallbackLabel
       const coordinates = [Number(place.lon), Number(place.lat)]
+      if (!Number.isFinite(coordinates[0]) || !Number.isFinite(coordinates[1])) return
+      const label = place.address || place.label || fallbackLabel
       endpointPoints.push(coordinates)
-      const popup = new maplibregl.Popup({ offset: 24, closeButton: false }).setDOMContent(makePopupContent(kind, label))
+      const popup = new maplibregl.Popup({ offset: 24, closeButton: false })
+        .setDOMContent(makePopupContent(kind, label))
       const marker = new maplibregl.Marker({ element: makeMarker(kind, label), anchor: 'bottom' })
         .setLngLat(coordinates)
         .setPopup(popup)
         .addTo(map)
+      marker.getElement().style.zIndex = '20'
       markersRef.current.push(marker)
     }
 
@@ -175,9 +203,13 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       features: previewFeature ? [previewFeature] : [],
     }
     const previewSource = map.getSource('greenroute-preview')
-    if (previewSource) previewSource.setData(previewData)
-    else {
+    if (previewSource) {
+      previewSource.setData(previewData)
+    } else {
       map.addSource('greenroute-preview', { type: 'geojson', data: previewData })
+    }
+
+    if (!map.getLayer('greenroute-preview-shadow')) {
       map.addLayer({
         id: 'greenroute-preview-shadow',
         type: 'line',
@@ -186,9 +218,11 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         paint: {
           'line-color': '#07150e',
           'line-width': 9,
-          'line-opacity': 0.62,
+          'line-opacity': 0.68,
         },
       })
+    }
+    if (!map.getLayer('greenroute-preview-line')) {
       map.addLayer({
         id: 'greenroute-preview-line',
         type: 'line',
@@ -208,7 +242,9 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     if (!allPoints.length) return
 
     const signature = `${allPoints[0]?.join(',')}|${allPoints[allPoints.length - 1]?.join(',')}|${features.length}`
-    if (!refit && fitSignatureRef.current === signature) return
+    const shouldRefit = refit || pendingRefitRef.current || fitSignatureRef.current !== signature
+    pendingRefitRef.current = false
+    if (!shouldRefit) return
     fitSignatureRef.current = signature
 
     const bounds = allPoints.reduce(
@@ -217,7 +253,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     )
     map.fitBounds(bounds, {
       padding: { top: 112, right: 72, bottom: 90, left: 72 },
-      duration: 750,
+      duration: 650,
       maxZoom: endpointPoints.length === 1 ? 15 : 13,
     })
   }
@@ -243,12 +279,14 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     mapRef.current = map
 
     const resize = () => requestAnimationFrame(() => mapRef.current?.resize())
-    const onLoad = () => {
+    const markReadyAndSync = () => {
+      mapReadyRef.current = true
       resize()
       syncMap(map, { refit: true })
     }
 
-    map.on('load', onLoad)
+    map.on('load', markReadyAndSync)
+    map.on('style.load', markReadyAndSync)
     map.on('click', async (event) => {
       const activePickMode = pickModeRef.current
       if (activePickMode && !pickingRef.current) {
@@ -303,6 +341,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       observer.disconnect()
       window.removeEventListener('resize', resize)
       clearMarkers()
+      mapReadyRef.current = false
       map.remove()
       mapRef.current = null
     }
@@ -310,13 +349,13 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !map.isStyleLoaded()) return
+    if (!map) return
     syncMap(map, { refit: true })
   }, [routes, origin, destination])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !map.isStyleLoaded()) return
+    if (!map) return
     syncMap(map, { refit: false })
   }, [selectedKind])
 
