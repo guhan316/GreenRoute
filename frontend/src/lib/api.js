@@ -19,10 +19,16 @@ export async function optimizeRoute(payload) {
   return parseResponse(response, 'Unable to optimize route')
 }
 
-export async function searchPlaces(query, limit = 6) {
+export async function searchPlaces(query, limit = 10) {
   const params = new URLSearchParams({ q: query, limit: String(limit) })
   const response = await fetch(`${API_BASE_URL}/api/places/search?${params}`)
   return parseResponse(response, 'Unable to search locations')
+}
+
+export async function reverseGeocode(lat, lon) {
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lon) })
+  const response = await fetch(`${API_BASE_URL}/api/places/reverse?${params}`)
+  return parseResponse(response, 'Unable to identify this map location')
 }
 
 export async function getVehicleCatalog() {
