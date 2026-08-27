@@ -39,10 +39,11 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
   }
   const energyQuantity = route.energy_quantity ?? (route.energy_kwh || route.fuel_litres || 0)
   const energyUnit = route.energy_unit || (route.energy_kwh ? 'kWh' : 'L')
+  const sourceType = route.source_route_type ? route.source_route_type.toUpperCase() : null
 
   return (
     <button className={`route-card ${active ? 'active' : ''} ${route.kind}`} onClick={onClick} type="button">
-      <div className="route-card-head"><span className="route-icon">{icon}</span><div><strong>{route.label}</strong><small>{route.distance_km.toFixed(1)} km</small></div><span className="route-select-indicator">{active ? 'VIEWING' : 'EXPLORE'}</span></div>
+      <div className="route-card-head"><span className="route-icon">{icon}</span><div><strong>{route.label}</strong><small>{route.distance_km.toFixed(1)} km{sourceType ? ` · ${sourceType}` : ''}</small></div><span className="route-select-indicator">{active ? 'VIEWING' : 'EXPLORE'}</span></div>
       <div className="route-card-grid"><div><small>ETA</small><b>{formatDuration(route.duration_minutes)}</b></div><div><small>Energy</small><b>{Number(energyQuantity).toFixed(1)} {energyUnit}</b></div><div><small>Cost</small><b>₹{Math.round(route.fuel_cost).toLocaleString('en-IN')}</b></div><div><small>CO₂</small><b>{route.co2_kg.toFixed(1)} kg</b></div></div>
       <div className="route-meta"><span>Traffic delay {Math.round(route.traffic_delay_minutes || 0)} min</span>{route.kind !== 'fastest' && <span className="route-saving-mini">{Math.max(0, tradeoff.co2_saved_kg_vs_fastest).toFixed(1)} kg CO₂ saved</span>}</div>
     </button>
@@ -140,15 +141,26 @@ export default function App() {
     else { setTrips([]); setDashboard(null) }
   }, [session, loadCloudData])
 
+  function invalidateOptimization() {
+    setRoutes([])
+    setLastOptimization(null)
+    setLastOptimizationForm(null)
+  }
+
   const change = (event) => {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
+    invalidateOptimization()
+  }
+
+  function changeVehicle(vehicle) {
+    setForm((current) => ({ ...current, vehicle }))
+    invalidateOptimization()
   }
 
   function changeLocationText(kind, value) {
     setForm((current) => ({ ...current, [`${kind}_text`]: value, [`${kind}_place`]: null }))
-    setRoutes([])
-    setLastOptimization(null)
+    invalidateOptimization()
   }
 
   function selectLocation(kind, place) {
@@ -157,8 +169,7 @@ export default function App() {
       [`${kind}_place`]: place,
       [`${kind}_text`]: place.address || place.label,
     }))
-    setRoutes([])
-    setLastOptimization(null)
+    invalidateOptimization()
   }
 
   async function submit(event) {
@@ -181,7 +192,7 @@ export default function App() {
     }
 
     setLoading(true)
-    setMessage('Fetching precise route candidates and evaluating vehicle-specific time, energy and carbon trade-offs…')
+    setMessage('Fetching diverse live route candidates and evaluating vehicle-specific time, energy and carbon trade-offs…')
     try {
       const departureTime = form.departure_mode === 'scheduled' && form.scheduled_departure ? `${form.scheduled_departure}:00+05:30` : 'now'
       const vehicle = {
@@ -203,7 +214,8 @@ export default function App() {
       setRoutingMode(data.mode)
       setLastOptimization(data)
       setLastOptimizationForm(requestPayload)
-      setMessage(`${data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed · ${data.notice}`)
+      const distinctText = data.distinct_recommendation_count ? ` · ${data.distinct_recommendation_count} distinct strategy paths` : ''
+      setMessage(`${data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed${distinctText} · ${data.notice}`)
     } catch (error) {
       setMessage(error.message)
     } finally { setLoading(false) }
@@ -227,7 +239,7 @@ export default function App() {
 
   const modeLabel = routingMode === 'live' ? '● Live traffic' : routingMode === 'demo' ? '◇ Demo mode' : routingMode === 'offline' ? '○ Backend offline' : '… Connecting'
   const mapStatus = form.origin_place && form.destination_place
-    ? (routes.length ? 'Live road alternatives are shown below.' : 'Both points are pinned. Optimize to replace the dashed preview with live road routes.')
+    ? (routes.length ? 'Live road alternatives are shown below.' : 'Both points are pinned. The dashed line is only a coordinate preview; optimize for real roads.')
     : form.origin_place || form.destination_place
       ? 'One point is pinned. Search or pin the other point.'
       : 'Search a place or use Pin pickup / Pin delivery directly on the map.'
@@ -258,7 +270,7 @@ export default function App() {
                 : <label>Fuel price (₹/{gaseousFuel ? 'kg' : 'L'})<input type="number" min="0.01" step="0.01" name="fuel_price_per_litre" value={form.fuel_price_per_litre} onChange={change} placeholder={gaseousFuel ? 'e.g. 86.00' : 'e.g. 92.50'} required /></label>}
             </div>
 
-            <VehicleSelector catalog={vehicleCatalog} vehicle={form.vehicle} onChange={(vehicle) => setForm((current) => ({ ...current, vehicle }))} />
+            <VehicleSelector catalog={vehicleCatalog} vehicle={form.vehicle} onChange={changeVehicle} />
 
             <div className={`load-meter ${loadInvalid ? 'over' : ''}`}><div><span>Payload utilisation</span><b>{Math.round(loadRatio)}%</b></div><div className="load-track"><i style={{ width: `${Math.min(100, loadRatio)}%` }} /></div><small>{loadValue.toLocaleString('en-IN')} / {Number(selectedVehicle.max_payload_kg || 0).toLocaleString('en-IN')} kg rated payload</small></div>
             <div className="departure-block"><span>Departure</span><div className="departure-toggle"><label className={form.departure_mode === 'now' ? 'active' : ''}><input type="radio" name="departure_mode" value="now" checked={form.departure_mode === 'now'} onChange={change} />Now</label><label className={form.departure_mode === 'scheduled' ? 'active' : ''}><input type="radio" name="departure_mode" value="scheduled" checked={form.departure_mode === 'scheduled'} onChange={change} />Schedule</label></div>{form.departure_mode === 'scheduled' && <input type="datetime-local" name="scheduled_departure" value={form.scheduled_departure} onChange={change} required />}</div>
@@ -270,7 +282,7 @@ export default function App() {
           <div className="map-panel glass-panel map-panel-v3">
             <div className="map-topline"><div><span className="pulse-dot" /> Interactive route map</div><span>Search · pin · zoom · click a route</span></div>
             <RouteMap routes={routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={form.origin_place || lastOptimization?.origin} destination={form.destination_place || lastOptimization?.destination} onPickPlace={selectLocation} />
-            {!lastOptimization && <div className="map-empty-state map-guidance"><b>{form.origin_place || form.destination_place ? 'Location preview' : 'Build the trip on the map'}</b><span>{mapStatus}</span></div>}
+            {!lastOptimization && !(form.origin_place && form.destination_place) && <div className="map-empty-state map-guidance"><b>{form.origin_place || form.destination_place ? 'Location preview' : 'Build the trip on the map'}</b><span>{mapStatus}</span></div>}
             {selectedRoute && <div className="map-float-card"><small>Selected strategy</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
           </div>
         </div>
