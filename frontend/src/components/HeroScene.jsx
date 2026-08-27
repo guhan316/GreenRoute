@@ -24,14 +24,12 @@ function interpolate(points, t) {
 
 function RouteStream({ color, speed, offset, points }) {
   const pulse = useRef()
-
   useFrame(({ clock }) => {
     if (!pulse.current) return
     const t = ((clock.getElapsedTime() * speed) + offset) % 1
     const [x, y, z] = interpolate(points, t)
     pulse.current.position.set(x, y, z)
   })
-
   return (
     <group>
       <Line points={points} color={color} lineWidth={1.55} transparent opacity={0.76} />
@@ -45,7 +43,6 @@ function RouteStream({ color, speed, offset, points }) {
 
 function Truck() {
   const truck = useRef()
-
   useFrame(({ clock }) => {
     if (!truck.current) return
     const t = (clock.getElapsedTime() * 0.105) % 1
@@ -53,7 +50,6 @@ function Truck() {
     truck.current.position.set(x, y - 0.2, z)
     truck.current.rotation.y = Math.sin(clock.getElapsedTime() * 0.45) * 0.03
   })
-
   return (
     <group ref={truck} scale={1.18}>
       <mesh position={[0.2, 0.34, 0]} castShadow>
@@ -68,14 +64,12 @@ function Truck() {
         <boxGeometry args={[0.24, 0.2, 0.03]} />
         <meshBasicMaterial color="#55a7ff" />
       </mesh>
-      {[-0.62, 0.5].map((x) =>
-        [-0.43, 0.43].map((z) => (
-          <mesh key={`${x}-${z}`} position={[x, -0.08, z]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.17, 0.17, 0.12, 18]} />
-            <meshStandardMaterial color="#050b08" roughness={0.86} />
-          </mesh>
-        )),
-      )}
+      {[-0.62, 0.5].map((x) => [-0.43, 0.43].map((z) => (
+        <mesh key={`${x}-${z}`} position={[x, -0.08, z]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.17, 0.17, 0.12, 18]} />
+          <meshStandardMaterial color="#050b08" roughness={0.86} />
+        </mesh>
+      )))}
     </group>
   )
 }
@@ -86,7 +80,6 @@ function CityBlocks() {
     [1.25, 0.5, -2.42, 0.9, 1.9], [2.35, 0.72, -2.35, 0.95, 2.55], [3.55, 0.46, -2.3, 0.9, 1.8], [4.55, 0.28, -2.2, 0.76, 1.25],
     [-4.0, 0.22, 2.35, 0.75, 1.1], [-2.85, 0.34, 2.5, 0.82, 1.5], [2.95, 0.32, 2.45, 0.82, 1.42], [4.15, 0.25, 2.28, 0.75, 1.18],
   ], [])
-
   return blocks.map(([x, y, z, width, height], index) => (
     <Float key={index} speed={0.45} rotationIntensity={0.035} floatIntensity={0.07}>
       <mesh position={[x, y, z]} castShadow>
@@ -133,29 +126,24 @@ function Scene() {
       <directionalLight position={[5, 8, 5]} intensity={3.1} color="#e7fff5" castShadow />
       <pointLight position={[-4, 3, 2]} intensity={8} color="#20e58b" distance={10} />
       <pointLight position={[4, 3, -2]} intensity={5.5} color="#55a7ff" distance={9} />
-
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.58, 0]} receiveShadow>
         <circleGeometry args={[6.15, 96]} />
         <meshStandardMaterial color="#07130f" roughness={0.88} />
       </mesh>
-
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.555, 0]}>
         <planeGeometry args={[11.6, 1.5]} />
         <meshStandardMaterial color="#1b372d" roughness={0.62} />
       </mesh>
-
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.548, 0]}>
         <planeGeometry args={[11.4, 1.14]} />
         <meshStandardMaterial color="#223f35" roughness={0.58} />
       </mesh>
-
       {[-4.25, -2.55, -0.85, 0.85, 2.55, 4.25].map((x) => (
         <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, -0.538, 0]}>
           <planeGeometry args={[0.62, 0.05]} />
           <meshBasicMaterial color="#c9ffe1" transparent opacity={0.78} />
         </mesh>
       ))}
-
       <CityBlocks />
       <Truck />
       {ROUTE_STREAMS.map((stream) => <RouteStream key={stream.color} {...stream} />)}
@@ -166,9 +154,25 @@ function Scene() {
   )
 }
 
+function FallbackLogisticsScene() {
+  return (
+    <div className="hero-fallback-stage" aria-hidden="true">
+      <div className="fallback-city left"><i /><i /><i /><i /></div>
+      <div className="fallback-city right"><i /><i /><i /><i /></div>
+      <div className="fallback-road">
+        <span className="fallback-lane one" /><span className="fallback-lane two" /><span className="fallback-lane three" />
+        <span className="fallback-stream fast" /><span className="fallback-stream balanced" /><span className="fallback-stream green" />
+        <div className="fallback-truck"><b className="truck-cab" /><b className="truck-box" /><i className="wheel front" /><i className="wheel rear" /></div>
+      </div>
+      <div className="fallback-hub start" /><div className="fallback-hub end" />
+    </div>
+  )
+}
+
 export default function HeroScene() {
   return (
     <div className="hero-canvas" aria-label="Interactive 3D logistics scene with route streams">
+      <FallbackLogisticsScene />
       <Canvas shadows camera={{ position: [0, 4.45, 8.75], fov: 38 }} dpr={[1, 1.5]}>
         <Scene />
       </Canvas>
