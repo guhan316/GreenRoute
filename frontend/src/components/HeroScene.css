@@ -6,186 +6,58 @@
   overflow: hidden;
   border-radius: 50%;
   isolation: isolate;
-  mask-image: none;
   background:
-    radial-gradient(circle at 50% 46%, rgba(53, 223, 138, .10), rgba(8, 25, 18, .02) 48%, transparent 72%),
-    linear-gradient(180deg, rgba(8, 31, 22, .2), rgba(5, 18, 13, .05));
+    radial-gradient(circle at 50% 48%, rgba(53,223,138,.11), rgba(8,25,18,.025) 52%, transparent 74%),
+    linear-gradient(180deg, rgba(8,31,22,.22), rgba(5,18,13,.04));
 }
 
 .hero-canvas::before {
   content: '';
   position: absolute;
   inset: 4%;
-  border: 1px solid rgba(84, 248, 166, .10);
+  border: 1px solid rgba(84,248,166,.10);
   border-radius: 50%;
-  box-shadow:
-    inset 0 0 90px rgba(53, 223, 138, .035),
-    0 0 110px rgba(53, 223, 138, .035);
+  box-shadow: inset 0 0 90px rgba(53,223,138,.035), 0 0 110px rgba(53,223,138,.035);
   pointer-events: none;
-  z-index: 3;
-}
-
-.hero-canvas canvas {
-  position: absolute !important;
-  inset: 0;
   z-index: 2;
-  width: 100% !important;
-  height: 100% !important;
 }
 
-.hero-fallback-stage {
+.hero-logistics-svg {
   position: absolute;
-  inset: 9% 6% 14%;
-  z-index: 1;
-  perspective: 900px;
-  pointer-events: none;
-  opacity: .95;
-}
-
-.fallback-road {
-  position: absolute;
-  left: 4%;
-  right: 4%;
-  top: 37%;
-  height: 31%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: visible;
-  border: 1px solid rgba(173,255,211,.16);
-  border-radius: 24px;
-  background: linear-gradient(180deg, #24483a, #152f25);
-  box-shadow: 0 34px 70px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
-  transform: rotateX(57deg) rotateZ(-5deg);
-  transform-style: preserve-3d;
 }
 
-.fallback-road::before,
-.fallback-road::after {
-  content: '';
-  position: absolute;
-  top: 8%;
-  bottom: 8%;
-  width: 8px;
-  border-radius: 999px;
-  background: rgba(7,18,13,.72);
+.hero-grid line {
+  stroke: #75dca9;
+  stroke-width: 1;
+  stroke-opacity: .08;
 }
-.fallback-road::before { left: 1.5%; }
-.fallback-road::after { right: 1.5%; }
 
-.fallback-lane {
-  position: absolute;
-  top: 50%;
-  width: 13%;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(222,255,238,.82);
-  box-shadow: 0 0 12px rgba(203,255,228,.22);
-}
-.fallback-lane.one { left: 13%; }
-.fallback-lane.two { left: 43.5%; }
-.fallback-lane.three { right: 13%; }
+.hero-city path { fill: #163a2a; stroke: #72e6aa; stroke-opacity: .10; stroke-width: 1; }
+.hero-city path:nth-child(2n) { fill: #102b20; }
+.hero-city path:nth-child(3n) { fill: #1d4634; }
 
-.fallback-stream {
-  position: absolute;
-  left: 4%;
-  right: 4%;
-  height: 3px;
-  border-radius: 999px;
-  opacity: .72;
-  filter: drop-shadow(0 0 8px currentColor);
-}
-.fallback-stream.fast { top: 26%; background: #55a7ff; color: #55a7ff; }
-.fallback-stream.balanced { top: 50%; background: #ffbf5b; color: #ffbf5b; }
-.fallback-stream.green { top: 74%; background: #35df8a; color: #35df8a; }
+.hero-route-pulses circle { filter: drop-shadow(0 0 9px currentColor); }
+.hero-node { filter: drop-shadow(0 0 16px rgba(53,223,138,.28)); }
 
-.fallback-truck {
-  position: absolute;
-  top: 53%;
-  left: 7%;
-  width: 96px;
-  height: 48px;
-  transform: translateY(-50%) translateZ(34px) rotateX(-57deg) rotateZ(5deg);
-  transform-origin: center;
-  animation: fallbackTruckDrive 7.2s cubic-bezier(.45,.04,.55,.96) infinite;
-  filter: drop-shadow(0 14px 15px rgba(0,0,0,.36));
+.hero-truck { transform-box: fill-box; transform-origin: center; }
+.hero-data-card text {
+  fill: #88a798;
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
 }
-.fallback-truck .truck-box,
-.fallback-truck .truck-cab {
-  position: absolute;
-  display: block;
-  border-radius: 7px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+.hero-data-card .hero-data-strong {
+  fill: #eafff4;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
 }
-.fallback-truck .truck-box {
-  right: 0;
-  top: 6px;
-  width: 62px;
-  height: 31px;
-  background: linear-gradient(145deg, #4cf3a0, #1da96a);
-}
-.fallback-truck .truck-cab {
-  left: 0;
-  top: 13px;
-  width: 35px;
-  height: 24px;
-  background: linear-gradient(145deg, #effff7, #b9e8d2);
-}
-.fallback-truck .truck-cab::after {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 4px;
-  width: 15px;
-  height: 8px;
-  border-radius: 3px;
-  background: #5ba2d4;
-}
-.fallback-truck .wheel {
-  position: absolute;
-  bottom: 1px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #030906;
-  border: 3px solid #12261d;
-  animation: fallbackWheel .7s linear infinite;
-}
-.fallback-truck .wheel.front { left: 15px; }
-.fallback-truck .wheel.rear { right: 14px; }
-
-.fallback-city {
-  position: absolute;
-  bottom: 20%;
-  display: flex;
-  align-items: end;
-  gap: 8px;
-  opacity: .74;
-}
-.fallback-city.left { left: 1%; }
-.fallback-city.right { right: 1%; }
-.fallback-city i {
-  width: 22px;
-  border: 1px solid rgba(102,243,171,.12);
-  background: linear-gradient(180deg, #174632, #0d281c);
-  border-radius: 4px 4px 1px 1px;
-  box-shadow: 0 0 30px rgba(53,223,138,.04);
-}
-.fallback-city i:nth-child(1) { height: 70px; }
-.fallback-city i:nth-child(2) { height: 112px; }
-.fallback-city i:nth-child(3) { height: 88px; }
-.fallback-city i:nth-child(4) { height: 138px; }
-
-.fallback-hub {
-  position: absolute;
-  top: 51%;
-  width: 18px;
-  height: 18px;
-  margin-top: -9px;
-  border-radius: 50%;
-  background: #dffff0;
-  box-shadow: 0 0 0 10px rgba(53,223,138,.08), 0 0 32px rgba(53,223,138,.55);
-  animation: fallbackHubPulse 2s ease-in-out infinite;
-}
-.fallback-hub.start { left: 5%; }
-.fallback-hub.end { right: 5%; background: #35df8a; animation-delay: .7s; }
 
 .hero-scene-legend {
   position: absolute;
@@ -197,10 +69,10 @@
   align-items: center;
   gap: 7px;
   padding: 8px;
-  border: 1px solid rgba(173, 255, 211, .14);
+  border: 1px solid rgba(173,255,211,.14);
   border-radius: 999px;
-  background: rgba(3, 16, 10, .78);
-  box-shadow: 0 14px 42px rgba(0, 0, 0, .25);
+  background: rgba(3,16,10,.82);
+  box-shadow: 0 14px 42px rgba(0,0,0,.25);
   backdrop-filter: blur(16px);
 }
 
@@ -213,42 +85,22 @@
   letter-spacing: .05em;
   text-transform: uppercase;
 }
-
-.hero-scene-legend .fast { color: #a8d1ff; background: rgba(85, 167, 255, .12); }
-.hero-scene-legend .balanced { color: #ffd792; background: rgba(255, 191, 91, .12); }
-.hero-scene-legend .green { color: #9fffc9; background: rgba(53, 223, 138, .12); }
-
-@keyframes fallbackTruckDrive {
-  0% { left: 6%; transform: translateY(-50%) translateZ(34px) rotateX(-57deg) rotateZ(5deg) scale(.92); }
-  50% { transform: translateY(-54%) translateZ(38px) rotateX(-57deg) rotateZ(5deg) scale(1.02); }
-  100% { left: calc(94% - 96px); transform: translateY(-50%) translateZ(34px) rotateX(-57deg) rotateZ(5deg) scale(.92); }
-}
-@keyframes fallbackWheel { to { transform: rotate(360deg); } }
-@keyframes fallbackHubPulse { 50% { box-shadow: 0 0 0 16px rgba(53,223,138,.025), 0 0 42px rgba(53,223,138,.72); } }
+.hero-scene-legend .fast { color: #a8d1ff; background: rgba(85,167,255,.12); }
+.hero-scene-legend .balanced { color: #ffd792; background: rgba(255,191,91,.12); }
+.hero-scene-legend .green { color: #9fffc9; background: rgba(53,223,138,.12); }
 
 @media (max-width: 900px) {
-  .hero-canvas {
-    min-height: 500px;
-    margin-top: -20px;
-    border-radius: 36px;
-  }
+  .hero-canvas { min-height: 500px; margin-top: -20px; border-radius: 36px; }
   .hero-canvas::before { border-radius: 36px; inset: 2%; }
-  .hero-fallback-stage { inset: 8% 4% 14%; }
 }
 
 @media (max-width: 560px) {
   .hero-canvas { min-height: 410px; }
   .hero-scene-legend { bottom: 14px; }
   .hero-scene-legend span { padding: 6px 9px; font-size: .58rem; }
-  .fallback-city { display: none; }
-  .fallback-truck { width: 78px; transform: translateY(-50%) translateZ(28px) rotateX(-57deg) rotateZ(5deg); }
-  .fallback-truck .truck-box { width: 50px; }
+  .hero-data-card { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-canvas canvas,
-  .fallback-truck,
-  .fallback-truck .wheel,
-  .fallback-hub { animation: none; }
-  .fallback-truck { left: 45%; }
+  .hero-logistics-svg animateMotion { display: none; }
 }

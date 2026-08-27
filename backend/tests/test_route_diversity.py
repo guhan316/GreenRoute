@@ -38,6 +38,35 @@ class RouteDiversityTests(unittest.TestCase):
         self.assertEqual(recommendations['balanced']['candidate_id'], 'fast-2')
         self.assertTrue(recommendations['balanced']['diversity_selected'])
         self.assertEqual(result['distinct_recommendation_count'], 3)
+        self.assertEqual(result['dominated_candidate_count'], 0)
+
+    def test_balanced_never_uses_route_dominated_on_all_objectives(self):
+        routes = [
+            {
+                'candidate_id': 'winner',
+                'source_route_type': 'efficient',
+                'duration_minutes': 3434,
+                'fuel_cost': 57136,
+                'co2_kg': 1276.0,
+            },
+            {
+                'candidate_id': 'worse-fast',
+                'source_route_type': 'fast',
+                'duration_minutes': 3436,
+                'fuel_cost': 57218,
+                'co2_kg': 1277.9,
+            },
+        ]
+
+        result = build_recommendations(routes)
+        recommendations = result['recommendations']
+
+        self.assertEqual(recommendations['fastest']['candidate_id'], 'winner')
+        self.assertEqual(recommendations['balanced']['candidate_id'], 'winner')
+        self.assertEqual(recommendations['greenest']['candidate_id'], 'winner')
+        self.assertEqual(result['pareto_candidate_count'], 1)
+        self.assertEqual(result['dominated_candidate_count'], 1)
+        self.assertEqual(result['distinct_recommendation_count'], 1)
 
     def test_balanced_is_not_forced_to_a_bad_distinct_route(self):
         routes = [
@@ -64,9 +93,10 @@ class RouteDiversityTests(unittest.TestCase):
             },
         ]
 
-        result = build_recommendations(routes)['recommendations']
-        self.assertNotEqual(result['balanced']['candidate_id'], 'detour')
-        self.assertIn('greenest', result['balanced'].get('shared_physical_route_with', []))
+        result = build_recommendations(routes)
+        recommendations = result['recommendations']
+        self.assertNotEqual(recommendations['balanced']['candidate_id'], 'detour')
+        self.assertEqual(result['dominated_candidate_count'], 1)
 
     def test_route_deduplication_keeps_meaningfully_different_geometry(self):
         route_a = {
