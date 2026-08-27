@@ -36,6 +36,7 @@ const BASE_STYLE = {
 function makeMarker(kind, label) {
   const element = document.createElement('div')
   element.className = `route-endpoint-marker ${kind}`
+  element.style.zIndex = '12'
   const badge = document.createElement('span')
   badge.textContent = kind === 'origin' ? 'A' : 'B'
   element.appendChild(badge)
@@ -98,16 +99,18 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         id: 'greenroute-route-shadow',
         type: 'line',
         source: 'greenroute-routes',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': '#0a1712',
-          'line-width': 8,
-          'line-opacity': 0.42,
+          'line-width': 9,
+          'line-opacity': 0.46,
         },
       })
       map.addLayer({
         id: 'greenroute-route-alternatives',
         type: 'line',
         source: 'greenroute-routes',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': [
             'match', ['get', 'kind'],
@@ -116,7 +119,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
             ROUTE_COLORS.greenest,
           ],
           'line-width': 4,
-          'line-opacity': 0.42,
+          'line-opacity': 0.46,
         },
       })
       map.addLayer({
@@ -124,6 +127,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         type: 'line',
         source: 'greenroute-routes',
         filter: ['==', ['get', 'kind'], state.selectedKind],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': [
             'match', ['get', 'kind'],
@@ -175,14 +179,26 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     else {
       map.addSource('greenroute-preview', { type: 'geojson', data: previewData })
       map.addLayer({
+        id: 'greenroute-preview-shadow',
+        type: 'line',
+        source: 'greenroute-preview',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#07150e',
+          'line-width': 9,
+          'line-opacity': 0.62,
+        },
+      })
+      map.addLayer({
         id: 'greenroute-preview-line',
         type: 'line',
         source: 'greenroute-preview',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#63e7a2',
-          'line-width': 3,
-          'line-opacity': 0.8,
-          'line-dasharray': [2, 2],
+          'line-color': '#35df8a',
+          'line-width': 5,
+          'line-opacity': 1,
+          'line-dasharray': [1.5, 1.2],
         },
       })
     }
@@ -200,7 +216,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       new maplibregl.LngLatBounds(allPoints[0], allPoints[0]),
     )
     map.fitBounds(bounds, {
-      padding: { top: 82, right: 72, bottom: 92, left: 72 },
+      padding: { top: 112, right: 72, bottom: 90, left: 72 },
       duration: 750,
       maxZoom: endpointPoints.length === 1 ? 15 : 13,
     })
@@ -309,6 +325,8 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     if (canvas) canvas.style.cursor = pickMode ? 'crosshair' : ''
   }, [pickMode])
 
+  const hasPreview = !routes?.length && origin?.lat != null && origin?.lon != null && destination?.lat != null && destination?.lon != null
+
   return (
     <div className="route-map-shell">
       <div ref={containerRef} className="route-map" />
@@ -328,10 +346,12 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         </div>
       )}
 
+      {hasPreview && <div className="map-preview-chip">A → B coordinate preview · Optimize for live roads</div>}
+
       <div className="map-legend">
         <span><i className="pickup-dot" />Pickup</span>
         <span><i className="drop-dot" />Delivery</span>
-        {!routes?.length && origin && destination && <span><i className="preview-line" />Point preview</span>}
+        {hasPreview && <span><i className="preview-line" />Point preview</span>}
         <span><i className="fastest-line" />Fastest</span>
         <span><i className="balanced-line" />Balanced</span>
         <span><i className="green-line" />Greenest</span>
