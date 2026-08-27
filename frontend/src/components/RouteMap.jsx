@@ -59,10 +59,18 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   const markersRef = useRef([])
   const stateRef = useRef({ routes: [], selectedKind: 'balanced', origin: null, destination: null })
   const fitSignatureRef = useRef('')
+  const pickModeRef = useRef(null)
+  const pickingRef = useRef(false)
+  const onPickPlaceRef = useRef(onPickPlace)
+  const onSelectKindRef = useRef(onSelectKind)
   const [pickMode, setPickMode] = useState(null)
   const [picking, setPicking] = useState(false)
 
   stateRef.current = { routes: routes || [], selectedKind, origin, destination }
+  pickModeRef.current = pickMode
+  pickingRef.current = picking
+  onPickPlaceRef.current = onPickPlace
+  onSelectKindRef.current = onSelectKind
 
   function clearMarkers() {
     markersRef.current.forEach((marker) => marker.remove())
@@ -226,14 +234,17 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
 
     map.on('load', onLoad)
     map.on('click', async (event) => {
-      if (pickMode && !picking) {
+      const activePickMode = pickModeRef.current
+      if (activePickMode && !pickingRef.current) {
         setPicking(true)
+        pickingRef.current = true
         try {
           const place = await reverseGeocode(event.lngLat.lat, event.lngLat.lng)
-          onPickPlace?.(pickMode, place)
+          onPickPlaceRef.current?.(activePickMode, place)
           setPickMode(null)
+          pickModeRef.current = null
         } catch {
-          onPickPlace?.(pickMode, {
+          onPickPlaceRef.current?.(activePickMode, {
             label: 'Pinned location',
             address: `${event.lngLat.lat.toFixed(6)}, ${event.lngLat.lng.toFixed(6)}`,
             lat: event.lngLat.lat,
@@ -241,8 +252,10 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
             result_type: 'Map pin',
           })
           setPickMode(null)
+          pickModeRef.current = null
         } finally {
           setPicking(false)
+          pickingRef.current = false
         }
         return
       }
@@ -252,10 +265,10 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         layers: ['greenroute-route-selected', 'greenroute-route-alternatives'],
       })
       const kind = hits?.[0]?.properties?.kind
-      if (kind) onSelectKind?.(kind)
+      if (kind) onSelectKindRef.current?.(kind)
     })
     map.on('mousemove', (event) => {
-      if (pickMode) {
+      if (pickModeRef.current) {
         map.getCanvas().style.cursor = 'crosshair'
         return
       }
@@ -277,7 +290,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       map.remove()
       mapRef.current = null
     }
-  }, [onSelectKind, onPickPlace, pickMode, picking])
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
