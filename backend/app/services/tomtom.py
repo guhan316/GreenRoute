@@ -4,6 +4,7 @@ import httpx
 
 
 GEOCODING_URL = 'https://api.tomtom.com/maps/orbis/places/geocode'
+REVERSE_GEOCODING_URL = 'https://api.tomtom.com/maps/orbis/places/reverseGeocode'
 SEARCH_V2_URL = 'https://api.tomtom.com/search/2/search/{query}.json'
 SEARCH_ORBIS_URL = 'https://api.tomtom.com/maps/orbis/places/search/{query}.json'
 ROUTING_URL = 'https://api.tomtom.com/maps/orbis/routing/routes/calculate'
@@ -40,7 +41,25 @@ class TomTomClient:
             })
         return results
 
-    async def search_places(self, query: str, limit: int = 6) -> list[dict]:
+    @staticmethod
+    def _dedupe_places(results: list[dict], limit: int) -> list[dict]:
+        unique = []
+        seen = set()
+        for place in results:
+            key = (
+                round(float(place.get('lat', 0)), 5),
+                round(float(place.get('lon', 0)), 5),
+                (place.get('label') or '').strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(place)
+            if len(unique) >= limit:
+                break
+        return unique
+
+    async def search_places(self, query: str, limit: int = 10) -> list[dict]:
         query = query.strip()
         if len(query) < 2:
             return []
@@ -52,7 +71,7 @@ class TomTomClient:
             'limit': limit,
             'countrySet': 'IN',
             'typeahead': 'true',
-            'idxSet': 'POI,PAD,Addr,Geo,Str',
+            'idxSet': 'POI,PAD,Addr,Geo,Str,XStr,EPP',
         }
         orbis_params = {
             **stable_params,
@@ -63,15 +82,76 @@ class TomTomClient:
         async with httpx.AsyncClient(timeout=15.0) as client:
             stable_response = await client.get(SEARCH_V2_URL.format(query=encoded_query), params=stable_params)
             if stable_response.is_success:
-                return self._parse_search_results(stable_response.json(), query)
-            errors.append(f'Search v2 returned {stable_response.status_code}')
+                parsed = self._parse_search_results(stable_response.json(), query)
+                if parsed:
+                    return self._dedupe_places(parsed, limit)
+            else:
+                errors.append(f'Search v2 returned {stable_response.status_code}')
 
             orbis_response = await client.get(SEARCH_ORBIS_URL.format(query=encoded_query), params=orbis_params)
             if orbis_response.is_success:
-                return self._parse_search_results(orbis_response.json(), query)
-            errors.append(f'Orbis Search returned {orbis_response.status_code}')
+                parsed = self._parse_search_results(orbis_response.json(), query)
+                if parsed:
+                    return self._dedupe_places(parsed, limit)
+            else:
+                errors.append(f'Orbis Search returned {orbis_response.status_code}')
 
-        raise ValueError('TomTom place search is unavailable (' + '; '.join(errors) + ')')
+        # A named POI may be absent even when the typed street/address is geocodable.
+        # Return that address match rather than making the user start over.
+        try:
+            fallback = await self.geocode(query)
+            fallback['result_type'] = 'Address fallback'
+            return [fallback]
+        except Exception:
+            if errors:
+                raise ValueError('TomTom place search is unavailable (' + '; '.join(errors) + ')')
+            return []
+
+    async def reverse_geocode(self, lat: float, lon: float) -> dict:
+        headers = {
+            'TomTom-Api-Version': '2',
+            'TomTom-Api-Key': self.api_key,
+            'Attributes': 'results',
+            'Accept': 'application/json',
+        }
+        params = {
+            'position': f'{float(lon)},{float(lat)}',
+            'radiusInMeters': 100,
+            'geopoliticalView': 'IN',
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(REVERSE_GEOCODING_URL, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+        results = data.get('results') or []
+        if not results:
+            return {
+                'label': 'Pinned location',
+                'address': f'{float(lat):.6f}, {float(lon):.6f}',
+                'lat': float(lat),
+                'lon': float(lon),
+                'result_type': 'Map pin',
+            }
+
+        result = results[0]
+        address = result.get('address') or {}
+        title = result.get('title') or address.get('freeformAddress') or 'Pinned location'
+        position = result.get('position') or {}
+        coordinates = position.get('coordinates') or []
+        result_lon = coordinates[0] if len(coordinates) > 1 else float(lon)
+        result_lat = coordinates[1] if len(coordinates) > 1 else float(lat)
+        return {
+            'tomtom_id': result.get('id'),
+            'result_type': 'Map pin',
+            'label': title,
+            'address': address.get('freeformAddress') or title,
+            'lat': result_lat,
+            'lon': result_lon,
+            'postal_code': address.get('postalCode'),
+            'municipality': address.get('municipality'),
+            'state': address.get('countrySubdivisionName') or address.get('countrySubdivision'),
+        }
 
     async def resolve_location(self, value) -> dict:
         if hasattr(value, 'model_dump'):
