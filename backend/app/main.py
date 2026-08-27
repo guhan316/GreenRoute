@@ -21,7 +21,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.4.0')
+app = FastAPI(title='GreenRoute API', version='0.5.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -50,7 +50,7 @@ def health():
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.4.0',
+        'version': '0.5.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'demo_fallback_enabled': settings.demo_fallback_enabled,
         'routing_mode': 'live' if settings.tomtom_api_key else 'demo',
@@ -74,7 +74,7 @@ async def vehicle_catalog():
 
 
 @app.get('/api/places/search')
-async def place_search(q: str = Query(min_length=2, max_length=180), limit: int = Query(default=6, ge=1, le=10)):
+async def place_search(q: str = Query(min_length=2, max_length=180), limit: int = Query(default=10, ge=1, le=10)):
     if not settings.tomtom_api_key:
         raise HTTPException(status_code=503, detail='TomTom is required for precise place search')
     try:
@@ -83,6 +83,17 @@ async def place_search(q: str = Query(min_length=2, max_length=180), limit: int 
         return {'results': results}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f'Place search error: {exc}') from exc
+
+
+@app.get('/api/places/reverse')
+async def reverse_place(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180)):
+    if not settings.tomtom_api_key:
+        raise HTTPException(status_code=503, detail='TomTom is required for map-pin address lookup')
+    try:
+        client = TomTomClient(settings.tomtom_api_key)
+        return await client.reverse_geocode(lat, lon)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'Reverse geocoding error: {exc}') from exc
 
 
 @app.post('/api/routes/optimize')

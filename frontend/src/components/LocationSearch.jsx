@@ -45,7 +45,7 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
 
     const timer = setTimeout(async () => {
       try {
-        const data = await searchPlaces(query, 7)
+        const data = await searchPlaces(query, 10)
         if (requestId.current === id) {
           const nextResults = data.results || []
           setResults(nextResults)
@@ -163,14 +163,14 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
           {!busy && searched && !results.length && !searchFailed && (
             <div className="autocomplete-state">
               <span className="autocomplete-state-icon" aria-hidden="true">⌕</span>
-              <div><strong>No matching place yet</strong><small>Add locality, district, landmark or pincode.</small></div>
+              <div><strong>No matching place yet</strong><small>Add locality or pincode, or use the map-pin controls for an exact spot.</small></div>
             </div>
           )}
 
           {!busy && searchFailed && (
             <div className="autocomplete-state error-state">
               <span className="autocomplete-state-icon" aria-hidden="true">!</span>
-              <div><strong>Place search unavailable</strong><small>GreenRoute could not reach the place-search service. Edit the query to retry.</small></div>
+              <div><strong>Place search unavailable</strong><small>You can still pin the exact pickup or delivery point directly on the map.</small></div>
             </div>
           )}
 

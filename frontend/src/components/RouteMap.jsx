@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
+import { reverseGeocode } from '../lib/api.js'
 
 const ROUTE_COLORS = {
   fastest: '#4c9dff',
@@ -52,14 +53,24 @@ function makePopupContent(kind, label) {
   return wrapper
 }
 
-export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination }) {
+export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
   const stateRef = useRef({ routes: [], selectedKind: 'balanced', origin: null, destination: null })
   const fitSignatureRef = useRef('')
+  const pickModeRef = useRef(null)
+  const pickingRef = useRef(false)
+  const onPickPlaceRef = useRef(onPickPlace)
+  const onSelectKindRef = useRef(onSelectKind)
+  const [pickMode, setPickMode] = useState(null)
+  const [picking, setPicking] = useState(false)
 
   stateRef.current = { routes: routes || [], selectedKind, origin, destination }
+  pickModeRef.current = pickMode
+  pickingRef.current = picking
+  onPickPlaceRef.current = onPickPlace
+  onSelectKindRef.current = onSelectKind
 
   function clearMarkers() {
     markersRef.current.forEach((marker) => marker.remove())
@@ -148,6 +159,34 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     addEndpoint(state.origin, 'origin', 'Pickup')
     addEndpoint(state.destination, 'destination', 'Delivery')
 
+    const previewFeature = endpointPoints.length === 2 && features.length === 0
+      ? {
+          type: 'Feature',
+          properties: { kind: 'preview' },
+          geometry: { type: 'LineString', coordinates: endpointPoints },
+        }
+      : null
+    const previewData = {
+      type: 'FeatureCollection',
+      features: previewFeature ? [previewFeature] : [],
+    }
+    const previewSource = map.getSource('greenroute-preview')
+    if (previewSource) previewSource.setData(previewData)
+    else {
+      map.addSource('greenroute-preview', { type: 'geojson', data: previewData })
+      map.addLayer({
+        id: 'greenroute-preview-line',
+        type: 'line',
+        source: 'greenroute-preview',
+        paint: {
+          'line-color': '#63e7a2',
+          'line-width': 3,
+          'line-opacity': 0.8,
+          'line-dasharray': [2, 2],
+        },
+      })
+    }
+
     const routePoints = features.flatMap((feature) => feature.geometry.coordinates)
     const allPoints = [...routePoints, ...endpointPoints]
     if (!allPoints.length) return
@@ -161,9 +200,9 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       new maplibregl.LngLatBounds(allPoints[0], allPoints[0]),
     )
     map.fitBounds(bounds, {
-      padding: { top: 72, right: 72, bottom: 76, left: 72 },
+      padding: { top: 82, right: 72, bottom: 92, left: 72 },
       duration: 750,
-      maxZoom: 15,
+      maxZoom: endpointPoints.length === 1 ? 15 : 13,
     })
   }
 
@@ -194,15 +233,45 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     }
 
     map.on('load', onLoad)
-    map.on('click', (event) => {
+    map.on('click', async (event) => {
+      const activePickMode = pickModeRef.current
+      if (activePickMode && !pickingRef.current) {
+        setPicking(true)
+        pickingRef.current = true
+        try {
+          const place = await reverseGeocode(event.lngLat.lat, event.lngLat.lng)
+          onPickPlaceRef.current?.(activePickMode, place)
+          setPickMode(null)
+          pickModeRef.current = null
+        } catch {
+          onPickPlaceRef.current?.(activePickMode, {
+            label: 'Pinned location',
+            address: `${event.lngLat.lat.toFixed(6)}, ${event.lngLat.lng.toFixed(6)}`,
+            lat: event.lngLat.lat,
+            lon: event.lngLat.lng,
+            result_type: 'Map pin',
+          })
+          setPickMode(null)
+          pickModeRef.current = null
+        } finally {
+          setPicking(false)
+          pickingRef.current = false
+        }
+        return
+      }
+
       if (!map.getLayer('greenroute-route-alternatives')) return
       const hits = map.queryRenderedFeatures(event.point, {
         layers: ['greenroute-route-selected', 'greenroute-route-alternatives'],
       })
       const kind = hits?.[0]?.properties?.kind
-      if (kind) onSelectKind?.(kind)
+      if (kind) onSelectKindRef.current?.(kind)
     })
     map.on('mousemove', (event) => {
+      if (pickModeRef.current) {
+        map.getCanvas().style.cursor = 'crosshair'
+        return
+      }
       if (!map.getLayer('greenroute-route-alternatives')) return
       const hits = map.queryRenderedFeatures(event.point, {
         layers: ['greenroute-route-selected', 'greenroute-route-alternatives'],
@@ -221,7 +290,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       map.remove()
       mapRef.current = null
     }
-  }, [onSelectKind])
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
@@ -235,12 +304,34 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     syncMap(map, { refit: false })
   }, [selectedKind])
 
+  useEffect(() => {
+    const canvas = mapRef.current?.getCanvas()
+    if (canvas) canvas.style.cursor = pickMode ? 'crosshair' : ''
+  }, [pickMode])
+
   return (
     <div className="route-map-shell">
       <div ref={containerRef} className="route-map" />
+
+      <div className="map-pick-controls">
+        <button type="button" className={pickMode === 'origin' ? 'active' : ''} onClick={() => setPickMode((current) => current === 'origin' ? null : 'origin')}>
+          <b>A</b> Pin pickup
+        </button>
+        <button type="button" className={pickMode === 'destination' ? 'active' : ''} onClick={() => setPickMode((current) => current === 'destination' ? null : 'destination')}>
+          <b>B</b> Pin delivery
+        </button>
+      </div>
+
+      {pickMode && (
+        <div className="map-pick-hint">
+          {picking ? 'Identifying this point…' : `Click the exact ${pickMode === 'origin' ? 'pickup' : 'delivery'} point on the map`}
+        </div>
+      )}
+
       <div className="map-legend">
         <span><i className="pickup-dot" />Pickup</span>
         <span><i className="drop-dot" />Delivery</span>
+        {!routes?.length && origin && destination && <span><i className="preview-line" />Point preview</span>}
         <span><i className="fastest-line" />Fastest</span>
         <span><i className="balanced-line" />Balanced</span>
         <span><i className="green-line" />Greenest</span>
