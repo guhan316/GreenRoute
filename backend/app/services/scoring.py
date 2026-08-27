@@ -22,8 +22,9 @@ def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
     elif kind == 'balanced':
         if route.get('diversity_selected'):
             reason = (
-                "Best distinct compromise close to GreenRoute's weighted optimum, using 40% time, "
-                '30% fuel-cost and 30% carbon while preserving a visibly different middle option.'
+                "Best practical middle option among the evaluated routes using GreenRoute's "
+                '40% time, 30% fuel-cost and 30% carbon weighting. A distinct route is preferred '
+                'only when it stays within practical time, cost and carbon guardrails.'
             )
         else:
             reason = (
@@ -55,6 +56,15 @@ def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
             ),
         },
     }
+
+
+def _practical_balanced_candidate(route: dict, fastest: dict) -> bool:
+    """Prevent visual diversity from selecting an unreasonable detour."""
+    return (
+        route['duration_minutes'] <= fastest['duration_minutes'] * 1.25
+        and route['fuel_cost'] <= fastest['fuel_cost'] * 1.15
+        and route['co2_kg'] <= fastest['co2_kg'] * 1.15
+    )
 
 
 def build_recommendations(routes: list[dict]) -> dict:
@@ -97,19 +107,18 @@ def build_recommendations(routes: list[dict]) -> dict:
     balanced_best = min(enriched, key=lambda route: route['balanced_score'])
     balanced = balanced_best
 
-    # GreenRoute is a three-strategy product. When a genuinely different candidate is
-    # nearly as good as the unconstrained weighted optimum, prefer that candidate for
-    # Balanced so users see a real middle trade-off instead of duplicate cards.
-    # We never accept a route more than 0.18 normalized-score points worse just to differ.
+    # The mathematically lowest weighted score can be the exact same physical route as
+    # Fastest or Greenest. For a three-strategy product, prefer a genuinely distinct
+    # middle candidate whenever TomTom returned one that remains operationally sensible.
     reserved_ids = {fastest.get('candidate_id'), greenest.get('candidate_id')}
-    distinct_balanced = [
+    practical_distinct = [
         route for route in enriched
         if route.get('candidate_id') not in reserved_ids
+        and _practical_balanced_candidate(route, fastest)
     ]
-    if distinct_balanced:
-        alternative = min(distinct_balanced, key=lambda route: route['balanced_score'])
-        if alternative['balanced_score'] <= balanced_best['balanced_score'] + 0.18:
-            balanced = {**alternative, 'diversity_selected': True}
+    if practical_distinct:
+        alternative = min(practical_distinct, key=lambda route: route['balanced_score'])
+        balanced = {**alternative, 'diversity_selected': True}
 
     recommendations = {
         'fastest': _decorate_recommendation(fastest, 'fastest', fastest),
@@ -117,7 +126,20 @@ def build_recommendations(routes: list[dict]) -> dict:
         'greenest': _decorate_recommendation(greenest, 'greenest', fastest),
     }
 
-    recommendation_ids = [recommendations[k].get('candidate_id') for k in ('fastest', 'balanced', 'greenest')]
+    # Be transparent if the routing engine genuinely produced fewer than three useful
+    # physical paths. The frontend can explain the shared route instead of presenting it
+    # as though two identical cards were different roads.
+    kinds = ('fastest', 'balanced', 'greenest')
+    for kind in kinds:
+        candidate_id = recommendations[kind].get('candidate_id')
+        shared = [
+            other for other in kinds
+            if other != kind and recommendations[other].get('candidate_id') == candidate_id
+        ]
+        if shared:
+            recommendations[kind]['shared_physical_route_with'] = shared
+
+    recommendation_ids = [recommendations[k].get('candidate_id') for k in kinds]
     return {
         'candidates': enriched,
         'recommendations': recommendations,
