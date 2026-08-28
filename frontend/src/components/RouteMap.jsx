@@ -304,21 +304,43 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
 
   const hasPreview = !routes?.length && origin?.lat != null && origin?.lon != null && destination?.lat != null && destination?.lon != null
 
+  const togglePickMode = (mode) => {
+    if (picking) return
+    setPickMode((current) => current === mode ? null : mode)
+  }
+
+  const pinButtonLabel = (mode, idleLabel) => {
+    if (picking && pickMode === mode) return 'Locating…'
+    if (pickMode === mode) return 'Click map…'
+    return idleLabel
+  }
+
   return (
     <div className="route-map-shell">
       <div ref={containerRef} className="route-map" />
       <svg ref={overlayRef} className="route-svg-overlay" aria-hidden="true" />
 
-      <div className="map-pick-controls">
-        <button type="button" className={pickMode === 'origin' ? 'active' : ''} onClick={() => setPickMode((current) => current === 'origin' ? null : 'origin')}>
-          <b>A</b> Pin pickup
+      <div className="map-pick-controls" role="group" aria-label="Choose locations directly on the map">
+        <button
+          type="button"
+          className={pickMode === 'origin' ? 'active' : ''}
+          onClick={() => togglePickMode('origin')}
+          aria-pressed={pickMode === 'origin'}
+          title={pickMode === 'origin' ? 'Click anywhere on the map to set pickup. Click this button again to cancel.' : 'Set pickup directly on the map'}
+        >
+          <b>A</b> {pinButtonLabel('origin', 'Pin pickup')}
         </button>
-        <button type="button" className={pickMode === 'destination' ? 'active' : ''} onClick={() => setPickMode((current) => current === 'destination' ? null : 'destination')}>
-          <b>B</b> Pin delivery
+        <button
+          type="button"
+          className={pickMode === 'destination' ? 'active' : ''}
+          onClick={() => togglePickMode('destination')}
+          aria-pressed={pickMode === 'destination'}
+          title={pickMode === 'destination' ? 'Click anywhere on the map to set delivery. Click this button again to cancel.' : 'Set delivery directly on the map'}
+        >
+          <b>B</b> {pinButtonLabel('destination', 'Pin delivery')}
         </button>
       </div>
 
-      {pickMode && <div className="map-pick-hint">{picking ? 'Identifying this point…' : `Click the exact ${pickMode === 'origin' ? 'pickup' : 'delivery'} point on the map`}</div>}
       {hasPreview && <div className="map-preview-chip">A → B coordinate preview · Optimize for live roads</div>}
 
       <div className="map-legend">
