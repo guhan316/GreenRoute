@@ -7,6 +7,7 @@ const ROUTE_COLORS = {
   fastest: '#4c9dff',
   balanced: '#f4b84a',
   greenest: '#2ddd86',
+  alternative: '#9aa8a1',
 }
 
 const BASE_STYLE = {
@@ -31,7 +32,7 @@ function cleanCoordinates(input) {
       && point[0] >= -180 && point[0] <= 180 && point[1] >= -90 && point[1] <= 90)
 }
 
-function simplifyCoordinates(points, target = 900) {
+function simplifyCoordinates(points, target = 1000) {
   if (points.length <= target) return points
   const stride = Math.ceil(points.length / target)
   const sampled = points.filter((_point, index) => index % stride === 0)
@@ -66,6 +67,23 @@ function svgPathFor(map, coordinates) {
       return `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`
     })
     .join(' ')
+}
+
+function strategyKindsFor(route) {
+  if (Array.isArray(route.strategyKinds) && route.strategyKinds.length) return route.strategyKinds
+  if (['fastest', 'balanced', 'greenest'].includes(route.kind)) return [route.kind]
+  return []
+}
+
+function routeIsSelected(route, selectedKind) {
+  return strategyKindsFor(route).includes(selectedKind)
+}
+
+function routeColor(route, selectedKind) {
+  const strategies = strategyKindsFor(route)
+  if (strategies.includes(selectedKind)) return ROUTE_COLORS[selectedKind]
+  if (route.isAlternative || !strategies.length) return ROUTE_COLORS.alternative
+  return ROUTE_COLORS[strategies[0]] || ROUTE_COLORS.alternative
 }
 
 export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace }) {
@@ -140,22 +158,23 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       .filter(({ coordinates }) => coordinates.length > 1)
 
     const ordered = [
-      ...routeEntries.filter(({ route }) => route.kind !== state.selectedKind),
-      ...routeEntries.filter(({ route }) => route.kind === state.selectedKind),
+      ...routeEntries.filter(({ route }) => !routeIsSelected(route, state.selectedKind)),
+      ...routeEntries.filter(({ route }) => routeIsSelected(route, state.selectedKind)),
     ]
 
     const namespace = 'http://www.w3.org/2000/svg'
     for (const { route, coordinates } of ordered) {
       const d = svgPathFor(map, coordinates)
       if (!d) continue
-      const selected = route.kind === state.selectedKind
+      const selected = routeIsSelected(route, state.selectedKind)
+      const alternative = route.isAlternative || strategyKindsFor(route).length === 0
 
       const casing = document.createElementNS(namespace, 'path')
       casing.setAttribute('d', d)
       casing.setAttribute('fill', 'none')
       casing.setAttribute('stroke', selected ? '#ffffff' : '#17241f')
-      casing.setAttribute('stroke-width', selected ? '11' : '8')
-      casing.setAttribute('stroke-opacity', selected ? '0.94' : '0.76')
+      casing.setAttribute('stroke-width', selected ? '11' : alternative ? '7' : '8')
+      casing.setAttribute('stroke-opacity', selected ? '0.96' : alternative ? '0.58' : '0.76')
       casing.setAttribute('stroke-linecap', 'round')
       casing.setAttribute('stroke-linejoin', 'round')
       casing.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -164,18 +183,23 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       const line = document.createElementNS(namespace, 'path')
       line.setAttribute('d', d)
       line.setAttribute('fill', 'none')
-      line.setAttribute('stroke', ROUTE_COLORS[route.kind] || '#35df8a')
-      line.setAttribute('stroke-width', selected ? '7' : '4.5')
-      line.setAttribute('stroke-opacity', selected ? '1' : '0.82')
+      line.setAttribute('stroke', routeColor(route, state.selectedKind))
+      line.setAttribute('stroke-width', selected ? '7' : alternative ? '4' : '4.5')
+      line.setAttribute('stroke-opacity', selected ? '1' : alternative ? '0.68' : '0.84')
       line.setAttribute('stroke-linecap', 'round')
       line.setAttribute('stroke-linejoin', 'round')
       line.setAttribute('vector-effect', 'non-scaling-stroke')
-      line.style.pointerEvents = 'stroke'
-      line.style.cursor = 'pointer'
-      line.addEventListener('click', (event) => {
-        event.stopPropagation()
-        onSelectKindRef.current?.(route.kind)
-      })
+
+      const strategies = strategyKindsFor(route)
+      if (strategies.length) {
+        line.style.pointerEvents = 'stroke'
+        line.style.cursor = 'pointer'
+        line.addEventListener('click', (event) => {
+          event.stopPropagation()
+          const targetKind = strategies.includes(state.selectedKind) ? state.selectedKind : strategies[0]
+          onSelectKindRef.current?.(targetKind)
+        })
+      }
       svg.appendChild(line)
     }
 
@@ -183,6 +207,16 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
       const endpoints = endpointCoordinates(state)
       if (endpoints.length === 2) {
         const d = svgPathFor(map, endpoints)
+        const previewCasing = document.createElementNS(namespace, 'path')
+        previewCasing.setAttribute('d', d)
+        previewCasing.setAttribute('fill', 'none')
+        previewCasing.setAttribute('stroke', '#0b2117')
+        previewCasing.setAttribute('stroke-width', '8')
+        previewCasing.setAttribute('stroke-linecap', 'round')
+        previewCasing.setAttribute('stroke-opacity', '0.7')
+        previewCasing.setAttribute('vector-effect', 'non-scaling-stroke')
+        svg.appendChild(previewCasing)
+
         const preview = document.createElementNS(namespace, 'path')
         preview.setAttribute('d', d)
         preview.setAttribute('fill', 'none')
@@ -190,7 +224,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         preview.setAttribute('stroke-width', '4')
         preview.setAttribute('stroke-dasharray', '10 9')
         preview.setAttribute('stroke-linecap', 'round')
-        preview.setAttribute('stroke-opacity', '0.95')
+        preview.setAttribute('stroke-opacity', '1')
         preview.setAttribute('vector-effect', 'non-scaling-stroke')
         svg.appendChild(preview)
       }
@@ -303,6 +337,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   }, [pickMode])
 
   const hasPreview = !routes?.length && origin?.lat != null && origin?.lon != null && destination?.lat != null && destination?.lon != null
+  const hasAlternativeRoads = (routes || []).some((route) => route.isAlternative)
 
   const togglePickMode = (mode) => {
     if (picking) return
@@ -316,16 +351,17 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   }
 
   return (
-    <div className="route-map-shell">
+    <div className="route-map-shell" data-map-ui="v4">
       <div ref={containerRef} className="route-map" />
       <svg ref={overlayRef} className="route-svg-overlay" aria-hidden="true" />
 
-      <div className="map-pick-controls" role="group" aria-label="Choose locations directly on the map">
+      <div className="gr-map-pin-controls" role="group" aria-label="Choose locations directly on the map">
         <button
           type="button"
           className={pickMode === 'origin' ? 'active' : ''}
           onClick={() => togglePickMode('origin')}
           aria-pressed={pickMode === 'origin'}
+          disabled={picking && pickMode !== 'origin'}
           title={pickMode === 'origin' ? 'Click anywhere on the map to set pickup. Click this button again to cancel.' : 'Set pickup directly on the map'}
         >
           <b>A</b> {pinButtonLabel('origin', 'Pin pickup')}
@@ -335,21 +371,23 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
           className={pickMode === 'destination' ? 'active' : ''}
           onClick={() => togglePickMode('destination')}
           aria-pressed={pickMode === 'destination'}
+          disabled={picking && pickMode !== 'destination'}
           title={pickMode === 'destination' ? 'Click anywhere on the map to set delivery. Click this button again to cancel.' : 'Set delivery directly on the map'}
         >
           <b>B</b> {pinButtonLabel('destination', 'Pin delivery')}
         </button>
       </div>
 
-      {hasPreview && <div className="map-preview-chip">A → B coordinate preview · Optimize for live roads</div>}
+      {hasPreview && <div className="gr-map-preview-chip">A → B coordinate preview · Optimize for live roads</div>}
 
-      <div className="map-legend">
+      <div className="gr-map-legend">
         <span><i className="pickup-dot" />Pickup</span>
         <span><i className="drop-dot" />Delivery</span>
         {hasPreview && <span><i className="preview-line" />Point preview</span>}
         <span><i className="fastest-line" />Fastest</span>
         <span><i className="balanced-line" />Balanced</span>
         <span><i className="green-line" />Greenest</span>
+        {hasAlternativeRoads && <span><i className="candidate-line" />Other road</span>}
       </div>
     </div>
   )

@@ -55,14 +55,14 @@
 .pickup-dot, .drop-dot { width: 8px; height: 8px; border-radius: 50%; }
 .pickup-dot { background: #35df8a; }
 .drop-dot { background: #ffbf5b; }
-.fastest-line, .balanced-line, .green-line { width: 17px; height: 3px; border-radius: 999px; }
+.fastest-line, .balanced-line, .green-line, .candidate-line { width: 17px; height: 3px; border-radius: 999px; }
 .fastest-line { background: #4c9dff; }
 .balanced-line { background: #f3b94f; }
 .green-line { background: #28d77f; }
+.candidate-line { background: #9aa8a1; }
 
-.map-empty-state { position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(320px, calc(100% - 48px)); padding: 16px 18px; border-radius: 16px; background: rgba(4,15,10,.88); color: #eafff4; border: 1px solid rgba(173,255,211,.16); backdrop-filter: blur(14px); text-align: center; display: grid; gap: 5px; pointer-events: none; }
-.map-empty-state b { font-family: 'Space Grotesk'; font-size: .9rem; }
-.map-empty-state span { color: #92aa9d; font-size: .69rem; line-height: 1.5; }
+.strategy-overlap-note { margin-top: 12px; padding: 11px 14px; border: 1px solid rgba(173,255,211,.13); border-radius: 14px; background: rgba(9,26,18,.72); color: #9db4a8; font-size: .72rem; line-height: 1.55; }
+.strategy-overlap-note b { color: #dff8eb; }
 
 @media (max-width: 1080px) {
   .v2-grid { grid-template-columns: 440px 1fr; }
