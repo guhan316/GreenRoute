@@ -30,6 +30,43 @@ function formatDuration(minutes) {
   return `${hours}h ${mins}m`
 }
 
+function buildMapRoutes(data, strategyRoutes) {
+  const byCandidate = new Map()
+
+  for (const route of strategyRoutes) {
+    const candidateId = route.candidate_id || `${route.distance_km}-${route.duration_minutes}`
+    const existing = byCandidate.get(candidateId)
+    if (existing) {
+      if (!existing.strategyKinds.includes(route.kind)) existing.strategyKinds.push(route.kind)
+      continue
+    }
+    byCandidate.set(candidateId, {
+      ...route,
+      mapKey: candidateId,
+      strategyKinds: [route.kind],
+      isAlternative: false,
+    })
+  }
+
+  const mapRoutes = [...byCandidate.values()]
+  const seen = new Set(byCandidate.keys())
+  for (const candidate of data.candidates || []) {
+    if (mapRoutes.length >= 3) break
+    const candidateId = candidate.candidate_id || `${candidate.distance_km}-${candidate.duration_minutes}`
+    if (seen.has(candidateId)) continue
+    seen.add(candidateId)
+    mapRoutes.push({
+      ...candidate,
+      mapKey: candidateId,
+      kind: 'alternative',
+      label: `Road alternative ${mapRoutes.length + 1}`,
+      strategyKinds: [],
+      isAlternative: true,
+    })
+  }
+  return mapRoutes.slice(0, 3)
+}
+
 function RouteCard({ route, fastestRoute, active, onClick }) {
   const icon = route.kind === 'fastest' ? '⚡' : route.kind === 'balanced' ? '⚖' : '🌱'
   const tradeoff = route.tradeoff || {
@@ -40,10 +77,11 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
   const energyQuantity = route.energy_quantity ?? (route.energy_kwh || route.fuel_litres || 0)
   const energyUnit = route.energy_unit || (route.energy_kwh ? 'kWh' : 'L')
   const sourceType = route.source_route_type ? route.source_route_type.toUpperCase() : null
+  const sharedCount = Array.isArray(route.shared_physical_route_with) ? route.shared_physical_route_with.length : 0
 
   return (
     <button className={`route-card ${active ? 'active' : ''} ${route.kind}`} onClick={onClick} type="button">
-      <div className="route-card-head"><span className="route-icon">{icon}</span><div><strong>{route.label}</strong><small>{route.distance_km.toFixed(1)} km{sourceType ? ` · ${sourceType}` : ''}</small></div><span className="route-select-indicator">{active ? 'VIEWING' : 'EXPLORE'}</span></div>
+      <div className="route-card-head"><span className="route-icon">{icon}</span><div><strong>{route.label}</strong><small>{route.distance_km.toFixed(1)} km{sourceType ? ` · ${sourceType}` : ''}{sharedCount ? ' · SHARED ROAD' : ''}</small></div><span className="route-select-indicator">{active ? 'VIEWING' : 'EXPLORE'}</span></div>
       <div className="route-card-grid"><div><small>ETA</small><b>{formatDuration(route.duration_minutes)}</b></div><div><small>Energy</small><b>{Number(energyQuantity).toFixed(1)} {energyUnit}</b></div><div><small>Cost</small><b>₹{Math.round(route.fuel_cost).toLocaleString('en-IN')}</b></div><div><small>CO₂</small><b>{route.co2_kg.toFixed(1)} kg</b></div></div>
       <div className="route-meta"><span>Traffic delay {Math.round(route.traffic_delay_minutes || 0)} min</span>{route.kind !== 'fastest' && <span className="route-saving-mini">{Math.max(0, tradeoff.co2_saved_kg_vs_fastest).toFixed(1)} kg CO₂ saved</span>}</div>
     </button>
@@ -65,6 +103,7 @@ export default function App() {
   })
   const [vehicleCatalog, setVehicleCatalog] = useState([])
   const [routes, setRoutes] = useState([])
+  const [mapRoutes, setMapRoutes] = useState([])
   const [selectedKind, setSelectedKind] = useState('balanced')
   const [loading, setLoading] = useState(false)
   const [routingMode, setRoutingMode] = useState('checking')
@@ -80,6 +119,7 @@ export default function App() {
 
   const selectedRoute = useMemo(() => routes.find((route) => route.kind === selectedKind) || routes[0] || null, [routes, selectedKind])
   const fastestRoute = useMemo(() => routes.find((route) => route.kind === 'fastest') || routes[0] || null, [routes])
+  const distinctStrategyRoads = useMemo(() => new Set(routes.map((route) => route.candidate_id)).size, [routes])
   const selectedVehicle = form.vehicle
   const loadValue = Number(form.load_kg || 0)
   const fuelPriceValue = Number(form.fuel_price_per_litre || 0)
@@ -143,6 +183,7 @@ export default function App() {
 
   function invalidateOptimization() {
     setRoutes([])
+    setMapRoutes([])
     setLastOptimization(null)
     setLastOptimizationForm(null)
   }
@@ -209,12 +250,17 @@ export default function App() {
         departure_time: departureTime,
       }
       const data = await optimizeRoute(requestPayload)
-      setRoutes(Object.entries(data.recommendations).map(([kind, route]) => ({ ...route, kind, label: kind.charAt(0).toUpperCase() + kind.slice(1) })))
+      const strategyRoutes = Object.entries(data.recommendations).map(([kind, route]) => ({ ...route, kind, label: kind.charAt(0).toUpperCase() + kind.slice(1) }))
+      setRoutes(strategyRoutes)
+      setMapRoutes(buildMapRoutes(data, strategyRoutes))
       setSelectedKind('balanced')
       setRoutingMode(data.mode)
       setLastOptimization(data)
       setLastOptimizationForm(requestPayload)
-      const distinctText = data.distinct_recommendation_count ? ` · ${data.distinct_recommendation_count} distinct strategy paths` : ''
+      const distinctCount = new Set(strategyRoutes.map((route) => route.candidate_id)).size
+      const distinctText = distinctCount < 3
+        ? ` · ${distinctCount} distinct strategy road${distinctCount === 1 ? '' : 's'}; other TomTom roads shown in grey`
+        : ' · 3 distinct strategy roads'
       setMessage(`${data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed${distinctText} · ${data.notice}`)
     } catch (error) {
       setMessage(error.message)
@@ -238,11 +284,6 @@ export default function App() {
   }
 
   const modeLabel = routingMode === 'live' ? '● Live traffic' : routingMode === 'demo' ? '◇ Demo mode' : routingMode === 'offline' ? '○ Backend offline' : '… Connecting'
-  const mapStatus = form.origin_place && form.destination_place
-    ? (routes.length ? 'Live road alternatives are shown below.' : 'Both points are pinned. The dashed line is only a coordinate preview; optimize for real roads.')
-    : form.origin_place || form.destination_place
-      ? 'One point is pinned. Search or pin the other point.'
-      : 'Search a place or use Pin pickup / Pin delivery directly on the map.'
 
   return (
     <main>
@@ -252,7 +293,7 @@ export default function App() {
         {authOpen && <AuthPanel session={session} onClose={() => setAuthOpen(false)} />}
       </nav>
 
-      <section className="hero" id="top"><div className="hero-copy"><div className="eyebrow">MULTI-OBJECTIVE LOGISTICS INTELLIGENCE</div><h1>Choose the route that matches <em>what matters now.</em></h1><p>GreenRoute blends live traffic, exact shipment locations, real vehicle identity, fuel economics and carbon analytics to surface the fastest, balanced and greenest shipment paths.</p><div className="hero-actions"><a className="primary-btn" href="#planner">Plan a route ↘</a><span className="live-chip"><i /> Interactive 3D logistics</span></div><div className="hero-stats"><div><b>3</b><span>route strategies</span></div><div><b>POI</b><span>coordinate-level search</span></div><div><b>CO₂</b><span>vehicle-aware analytics</span></div></div></div><HeroScene /></section>
+      <section className="hero" id="top"><div className="hero-copy"><div className="eyebrow">MULTI-OBJECTIVE LOGISTICS INTELLIGENCE</div><h1>Choose the route that matches <em>what matters now.</em></h1><p>GreenRoute blends live traffic, exact shipment locations, real vehicle identity, fuel economics and carbon analytics to surface the fastest, balanced and greenest shipment paths.</p><div className="hero-actions"><a className="primary-btn" href="#planner">Plan a route ↘</a><span className="live-chip"><i /> Interactive logistics intelligence</span></div><div className="hero-stats"><div><b>3</b><span>route strategies</span></div><div><b>POI</b><span>coordinate-level search</span></div><div><b>CO₂</b><span>vehicle-aware analytics</span></div></div></div><HeroScene /></section>
 
       <section className="planner-section" id="planner">
         <div className="section-heading"><div><span>ROUTE LAB</span><h2>Turn shipment constraints into transparent choices.</h2></div><p>{message}</p></div>
@@ -280,14 +321,14 @@ export default function App() {
           </form>
 
           <div className="map-panel glass-panel map-panel-v3">
-            <div className="map-topline"><div><span className="pulse-dot" /> Interactive route map</div><span>Search · pin · zoom · click a route</span></div>
-            <RouteMap routes={routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={form.origin_place || lastOptimization?.origin} destination={form.destination_place || lastOptimization?.destination} onPickPlace={selectLocation} />
-            {!lastOptimization && !(form.origin_place && form.destination_place) && <div className="map-empty-state map-guidance"><b>{form.origin_place || form.destination_place ? 'Location preview' : 'Build the trip on the map'}</b><span>{mapStatus}</span></div>}
+            <div className="map-topline"><div><span className="pulse-dot" /> Interactive route map</div><span>Search · pin · zoom · compare roads</span></div>
+            <RouteMap routes={mapRoutes.length ? mapRoutes : routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={form.origin_place || lastOptimization?.origin} destination={form.destination_place || lastOptimization?.destination} onPickPlace={selectLocation} />
             {selectedRoute && <div className="map-float-card"><small>Selected strategy</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
           </div>
         </div>
 
         {routes.length > 0 && fastestRoute && <div className="route-cards">{routes.map((route) => <RouteCard key={route.kind} route={route} fastestRoute={fastestRoute} active={selectedKind === route.kind} onClick={() => setSelectedKind(route.kind)} />)}</div>}
+        {routes.length > 0 && distinctStrategyRoads < 3 && <div className="strategy-overlap-note"><b>{distinctStrategyRoads === 1 ? 'One physical road wins multiple objectives.' : 'Two strategy labels share a physical road.'}</b> GreenRoute will not invent a worse route just to make three cards look different. The map still shows other distinct TomTom road candidates in grey so you can compare the actual roads available.</div>}
         {selectedRoute && fastestRoute && <div id="intelligence"><RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} /></div>}
         <div className="save-trip-bar glass-panel"><div><span>CLOUD TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Optimize a real trip to enable saving'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Add the Supabase publishable key to enable cloud sync.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save Trip ↗' : 'Sign in to save'}</button></div>
       </section>
