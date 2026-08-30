@@ -8,6 +8,7 @@ class PlaceInput(BaseModel):
     address: str | None = Field(default=None, max_length=320)
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
+    google_place_id: str | None = Field(default=None, max_length=240)
     tomtom_id: str | None = Field(default=None, max_length=240)
     result_type: str | None = Field(default=None, max_length=80)
 
@@ -16,7 +17,7 @@ class VehicleInput(BaseModel):
     manufacturer: str = Field(min_length=1, max_length=120)
     model: str = Field(min_length=1, max_length=160)
     manufacture_year: int = Field(ge=1990, le=2100)
-    fuel_type: str = Field(pattern='^(diesel|petrol|cng|lng|electric)$')
+    fuel_type: str = Field(pattern="^(diesel|petrol|cng|lng|electric)$")
     max_payload_kg: float = Field(gt=0, le=80000)
     kerb_weight_kg: float = Field(gt=0, le=80000)
     # For diesel/petrol this is km/L; for CNG/LNG it is km/kg.
@@ -26,13 +27,13 @@ class VehicleInput(BaseModel):
     emission_stage: str | None = Field(default=None, max_length=80)
     catalog_id: str | None = Field(default=None, max_length=80)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_energy_model(self):
-        if self.fuel_type == 'electric':
+        if self.fuel_type == "electric":
             if self.energy_consumption_kwh_per_km is None:
-                raise ValueError('Electric vehicles require energy_consumption_kwh_per_km')
+                raise ValueError("Electric vehicles require energy_consumption_kwh_per_km")
         elif self.base_mileage_kmpl is None:
-            raise ValueError('Combustion vehicles require distance-per-fuel-unit efficiency')
+            raise ValueError("Combustion vehicles require distance-per-fuel-unit efficiency")
         return self
 
 
@@ -45,13 +46,13 @@ class RouteOptimizationRequest(BaseModel):
     # L for diesel/petrol, kg for CNG/LNG. Kept under the legacy field name for API compatibility.
     fuel_price_per_litre: float = Field(default=92.5, gt=0, le=500)
     electricity_price_per_kwh: float = Field(default=8.0, gt=0, le=100)
-    departure_time: str = Field(default='now', min_length=3, max_length=64)
+    departure_time: str = Field(default="now", min_length=3, max_length=64)
 
 
 class OptimizationSaveRequest(BaseModel):
     form: dict[str, Any]
     optimization: dict[str, Any]
-    selected_strategy: str = Field(pattern='^(fastest|balanced|greenest)$')
+    selected_strategy: str = Field(pattern="^(fastest|balanced|greenest)$")
 
 
 class VrpRequest(BaseModel):

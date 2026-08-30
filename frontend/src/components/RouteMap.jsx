@@ -1,27 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import * as maplibregl from 'maplibre-gl'
-import { reverseGeocode } from '../lib/api.js'
+import { googleMapsConfigured, loadGoogleMaps } from '../lib/googleMaps.js'
 import './RouteMap.css'
 
 const ROUTE_COLORS = {
-  fastest: '#4c9dff',
-  balanced: '#f4b84a',
-  greenest: '#2ddd86',
-  alternative: '#9aa8a1',
-}
-
-const BASE_STYLE = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+  fastest: '#4285f4',
+  balanced: '#fbbc04',
+  greenest: '#22c55e',
+  alternative: '#8b9490',
 }
 
 function cleanCoordinates(input) {
@@ -30,43 +15,6 @@ function cleanCoordinates(input) {
     .map((point) => Array.isArray(point) && point.length >= 2 ? [Number(point[0]), Number(point[1])] : null)
     .filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1])
       && point[0] >= -180 && point[0] <= 180 && point[1] >= -90 && point[1] <= 90)
-}
-
-function simplifyCoordinates(points, target = 1000) {
-  if (points.length <= target) return points
-  const stride = Math.ceil(points.length / target)
-  const sampled = points.filter((_point, index) => index % stride === 0)
-  if (sampled[sampled.length - 1] !== points[points.length - 1]) sampled.push(points[points.length - 1])
-  return sampled
-}
-
-function makeMarker(kind, label) {
-  const element = document.createElement('div')
-  element.className = `route-endpoint-marker ${kind}`
-  const badge = document.createElement('span')
-  badge.textContent = kind === 'origin' ? 'A' : 'B'
-  element.appendChild(badge)
-  element.setAttribute('aria-label', label)
-  return element
-}
-
-function makePopupContent(kind, label) {
-  const wrapper = document.createElement('div')
-  const title = document.createElement('strong')
-  const detail = document.createElement('span')
-  title.textContent = kind === 'origin' ? 'Pickup' : 'Delivery'
-  detail.textContent = label
-  wrapper.append(title, document.createElement('br'), detail)
-  return wrapper
-}
-
-function svgPathFor(map, coordinates) {
-  return simplifyCoordinates(coordinates)
-    .map(([lon, lat], index) => {
-      const point = map.project([lon, lat])
-      return `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`
-    })
-    .join(' ')
 }
 
 function strategyKindsFor(route) {
@@ -86,20 +34,32 @@ function routeColor(route, selectedKind) {
   return ROUTE_COLORS[strategies[0]] || ROUTE_COLORS.alternative
 }
 
+function pointLiteral(place) {
+  if (place?.lat == null || place?.lon == null) return null
+  const lat = Number(place.lat)
+  const lng = Number(place.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
+}
+
 export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace }) {
   const containerRef = useRef(null)
-  const overlayRef = useRef(null)
   const mapRef = useRef(null)
+  const trafficLayerRef = useRef(null)
+  const geocoderRef = useRef(null)
   const markersRef = useRef([])
-  const readyRef = useRef(false)
+  const routePolylinesRef = useRef([])
+  const previewPolylineRef = useRef(null)
+  const clickListenerRef = useRef(null)
   const stateRef = useRef({ routes: [], selectedKind: 'balanced', origin: null, destination: null })
-  const fitSignatureRef = useRef('')
   const pickModeRef = useRef(null)
   const pickingRef = useRef(false)
   const onPickPlaceRef = useRef(onPickPlace)
   const onSelectKindRef = useRef(onSelectKind)
   const [pickMode, setPickMode] = useState(null)
   const [picking, setPicking] = useState(false)
+  const [mapStatus, setMapStatus] = useState(googleMapsConfigured() ? 'loading' : 'unconfigured')
+  const [mapError, setMapError] = useState('')
 
   stateRef.current = { routes: routes || [], selectedKind, origin, destination }
   pickModeRef.current = pickMode
@@ -107,236 +67,263 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   onPickPlaceRef.current = onPickPlace
   onSelectKindRef.current = onSelectKind
 
-  const endpointCoordinates = (state) => {
-    const result = []
-    for (const place of [state.origin, state.destination]) {
-      if (place?.lat == null || place?.lon == null) continue
-      const point = [Number(place.lon), Number(place.lat)]
-      if (Number.isFinite(point[0]) && Number.isFinite(point[1])) result.push(point)
-    }
-    return result
+  function clearMarkers() {
+    markersRef.current.forEach((marker) => marker.setMap(null))
+    markersRef.current = []
   }
 
-  function clearMarkers() {
-    markersRef.current.forEach((marker) => marker.remove())
-    markersRef.current = []
+  function clearRoutes() {
+    routePolylinesRef.current.forEach((polyline) => {
+      if (polyline.__greenrouteClick) google.maps.event.removeListener(polyline.__greenrouteClick)
+      polyline.setMap(null)
+    })
+    routePolylinesRef.current = []
+    if (previewPolylineRef.current) {
+      previewPolylineRef.current.setMap(null)
+      previewPolylineRef.current = null
+    }
   }
 
   function syncMarkers(map) {
     clearMarkers()
-    const add = (place, kind, fallback) => {
-      if (place?.lat == null || place?.lon == null) return
-      const coordinates = [Number(place.lon), Number(place.lat)]
-      if (!Number.isFinite(coordinates[0]) || !Number.isFinite(coordinates[1])) return
-      const label = place.address || place.label || fallback
-      const popup = new maplibregl.Popup({ offset: 24, closeButton: false })
-        .setDOMContent(makePopupContent(kind, label))
-      const marker = new maplibregl.Marker({ element: makeMarker(kind, label), anchor: 'bottom' })
-        .setLngLat(coordinates)
-        .setPopup(popup)
-        .addTo(map)
-      marker.getElement().style.zIndex = '25'
+    const markerSpecs = [
+      { place: stateRef.current.origin, label: 'A', title: 'Pickup', fill: '#35df8a' },
+      { place: stateRef.current.destination, label: 'B', title: 'Delivery', fill: '#ffbd55' },
+    ]
+
+    for (const spec of markerSpecs) {
+      const position = pointLiteral(spec.place)
+      if (!position) continue
+      const marker = new google.maps.Marker({
+        map,
+        position,
+        title: spec.place.address || spec.place.label || spec.title,
+        label: {
+          text: spec.label,
+          color: '#07130e',
+          fontWeight: '800',
+          fontSize: '12px',
+        },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 13,
+          fillColor: spec.fill,
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2.5,
+        },
+        zIndex: 30,
+      })
       markersRef.current.push(marker)
     }
-    add(stateRef.current.origin, 'origin', 'Pickup')
-    add(stateRef.current.destination, 'destination', 'Delivery')
   }
 
-  function renderOverlay(map) {
-    const svg = overlayRef.current
-    if (!svg || !map || !readyRef.current) return
-
-    const canvas = map.getCanvas()
-    const width = canvas.clientWidth || canvas.width
-    const height = canvas.clientHeight || canvas.height
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
-    svg.replaceChildren()
-
+  function syncRoutes(map) {
+    clearRoutes()
     const state = stateRef.current
     const routeEntries = (state.routes || [])
-      .map((route) => ({ route, coordinates: cleanCoordinates(route.coordinates) }))
-      .filter(({ coordinates }) => coordinates.length > 1)
+      .map((route) => ({
+        route,
+        path: cleanCoordinates(route.coordinates).map(([lng, lat]) => ({ lat, lng })),
+      }))
+      .filter(({ path }) => path.length > 1)
 
     const ordered = [
       ...routeEntries.filter(({ route }) => !routeIsSelected(route, state.selectedKind)),
       ...routeEntries.filter(({ route }) => routeIsSelected(route, state.selectedKind)),
     ]
 
-    const namespace = 'http://www.w3.org/2000/svg'
-    for (const { route, coordinates } of ordered) {
-      const d = svgPathFor(map, coordinates)
-      if (!d) continue
+    for (const { route, path } of ordered) {
       const selected = routeIsSelected(route, state.selectedKind)
       const alternative = route.isAlternative || strategyKindsFor(route).length === 0
-
-      const casing = document.createElementNS(namespace, 'path')
-      casing.setAttribute('d', d)
-      casing.setAttribute('fill', 'none')
-      casing.setAttribute('stroke', selected ? '#ffffff' : '#17241f')
-      casing.setAttribute('stroke-width', selected ? '11' : alternative ? '7' : '8')
-      casing.setAttribute('stroke-opacity', selected ? '0.96' : alternative ? '0.58' : '0.76')
-      casing.setAttribute('stroke-linecap', 'round')
-      casing.setAttribute('stroke-linejoin', 'round')
-      casing.setAttribute('vector-effect', 'non-scaling-stroke')
-      svg.appendChild(casing)
-
-      const line = document.createElementNS(namespace, 'path')
-      line.setAttribute('d', d)
-      line.setAttribute('fill', 'none')
-      line.setAttribute('stroke', routeColor(route, state.selectedKind))
-      line.setAttribute('stroke-width', selected ? '7' : alternative ? '4' : '4.5')
-      line.setAttribute('stroke-opacity', selected ? '1' : alternative ? '0.68' : '0.84')
-      line.setAttribute('stroke-linecap', 'round')
-      line.setAttribute('stroke-linejoin', 'round')
-      line.setAttribute('vector-effect', 'non-scaling-stroke')
+      const polyline = new google.maps.Polyline({
+        map,
+        path,
+        geodesic: false,
+        strokeColor: routeColor(route, state.selectedKind),
+        strokeOpacity: selected ? 1 : alternative ? 0.72 : 0.86,
+        strokeWeight: selected ? 7 : alternative ? 5 : 5.5,
+        zIndex: selected ? 20 : alternative ? 8 : 12,
+        clickable: strategyKindsFor(route).length > 0,
+      })
 
       const strategies = strategyKindsFor(route)
       if (strategies.length) {
-        line.style.pointerEvents = 'stroke'
-        line.style.cursor = 'pointer'
-        line.addEventListener('click', (event) => {
-          event.stopPropagation()
+        polyline.__greenrouteClick = polyline.addListener('click', () => {
           const targetKind = strategies.includes(state.selectedKind) ? state.selectedKind : strategies[0]
           onSelectKindRef.current?.(targetKind)
         })
       }
-      svg.appendChild(line)
+      routePolylinesRef.current.push(polyline)
     }
 
     if (!routeEntries.length) {
-      const endpoints = endpointCoordinates(state)
-      if (endpoints.length === 2) {
-        const d = svgPathFor(map, endpoints)
-        const previewCasing = document.createElementNS(namespace, 'path')
-        previewCasing.setAttribute('d', d)
-        previewCasing.setAttribute('fill', 'none')
-        previewCasing.setAttribute('stroke', '#0b2117')
-        previewCasing.setAttribute('stroke-width', '8')
-        previewCasing.setAttribute('stroke-linecap', 'round')
-        previewCasing.setAttribute('stroke-opacity', '0.7')
-        previewCasing.setAttribute('vector-effect', 'non-scaling-stroke')
-        svg.appendChild(previewCasing)
-
-        const preview = document.createElementNS(namespace, 'path')
-        preview.setAttribute('d', d)
-        preview.setAttribute('fill', 'none')
-        preview.setAttribute('stroke', '#35df8a')
-        preview.setAttribute('stroke-width', '4')
-        preview.setAttribute('stroke-dasharray', '10 9')
-        preview.setAttribute('stroke-linecap', 'round')
-        preview.setAttribute('stroke-opacity', '1')
-        preview.setAttribute('vector-effect', 'non-scaling-stroke')
-        svg.appendChild(preview)
+      const from = pointLiteral(state.origin)
+      const to = pointLiteral(state.destination)
+      if (from && to) {
+        previewPolylineRef.current = new google.maps.Polyline({
+          map,
+          path: [from, to],
+          strokeColor: '#35df8a',
+          strokeOpacity: 0,
+          strokeWeight: 3,
+          icons: [{
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: '#35df8a',
+              fillOpacity: 1,
+              strokeOpacity: 0,
+              scale: 2.5,
+            },
+            offset: '0',
+            repeat: '14px',
+          }],
+          zIndex: 5,
+        })
       }
     }
   }
 
-  function fitToState(map, force = false) {
-    const state = stateRef.current
-    const routePoints = (state.routes || []).flatMap((route) => cleanCoordinates(route.coordinates))
-    const endpoints = endpointCoordinates(state)
-    const allPoints = [...routePoints, ...endpoints]
-    if (!allPoints.length) return
+  function fitToState(map) {
+    const bounds = new google.maps.LatLngBounds()
+    let count = 0
 
-    const signature = `${allPoints[0].join(',')}|${allPoints[allPoints.length - 1].join(',')}|${routePoints.length}`
-    if (!force && fitSignatureRef.current === signature) return
-    fitSignatureRef.current = signature
+    for (const route of stateRef.current.routes || []) {
+      for (const [lng, lat] of cleanCoordinates(route.coordinates)) {
+        bounds.extend({ lat, lng })
+        count += 1
+      }
+    }
 
-    const bounds = allPoints.reduce(
-      (acc, coordinate) => acc.extend(coordinate),
-      new maplibregl.LngLatBounds(allPoints[0], allPoints[0]),
-    )
-    map.fitBounds(bounds, {
-      padding: { top: 105, right: 62, bottom: 82, left: 62 },
-      duration: 700,
-      maxZoom: endpoints.length === 1 ? 15 : 12,
-    })
+    for (const place of [stateRef.current.origin, stateRef.current.destination]) {
+      const point = pointLiteral(place)
+      if (point) {
+        bounds.extend(point)
+        count += 1
+      }
+    }
+
+    if (!count) return
+    if (count === 1) {
+      map.setCenter(bounds.getCenter())
+      map.setZoom(15)
+      return
+    }
+    map.fitBounds(bounds, { top: 90, right: 50, bottom: 80, left: 50 })
   }
 
-  function syncAll({ refit = false } = {}) {
+  function syncAll({ fit = false } = {}) {
     const map = mapRef.current
-    if (!map || !readyRef.current) return
+    if (!map) return
     syncMarkers(map)
-    fitToState(map, refit)
-    requestAnimationFrame(() => renderOverlay(map))
+    syncRoutes(map)
+    if (fit) fitToState(map)
   }
 
   useEffect(() => {
-    if (mapRef.current || !containerRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: BASE_STYLE,
-      center: [78.9629, 22.6],
-      zoom: 4.1,
-      pitch: 0,
-      bearing: 0,
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
-      attributionControl: true,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 110 }), 'bottom-left')
-    mapRef.current = map
+    if (!containerRef.current || !googleMapsConfigured()) return undefined
+    let cancelled = false
 
-    const redraw = () => requestAnimationFrame(() => renderOverlay(map))
-    const ready = () => {
-      readyRef.current = true
-      map.resize()
-      syncAll({ refit: true })
-    }
-    map.on('load', ready)
-    map.on('move', redraw)
-    map.on('zoom', redraw)
-    map.on('resize', redraw)
-
-    map.on('click', async (event) => {
-      const activePickMode = pickModeRef.current
-      if (!activePickMode || pickingRef.current) return
-      setPicking(true)
-      pickingRef.current = true
+    async function initialise() {
       try {
-        const place = await reverseGeocode(event.lngLat.lat, event.lngLat.lng)
-        onPickPlaceRef.current?.(activePickMode, place)
-      } catch {
-        onPickPlaceRef.current?.(activePickMode, {
-          label: 'Pinned location',
-          address: `${event.lngLat.lat.toFixed(6)}, ${event.lngLat.lng.toFixed(6)}`,
-          lat: event.lngLat.lat,
-          lon: event.lngLat.lng,
-          result_type: 'Map pin',
-        })
-      } finally {
-        setPickMode(null)
-        pickModeRef.current = null
-        setPicking(false)
-        pickingRef.current = false
-      }
-    })
+        await loadGoogleMaps()
+        await google.maps.importLibrary('maps')
+        if (cancelled || !containerRef.current) return
 
-    const observer = new ResizeObserver(() => {
-      map.resize()
-      redraw()
-    })
-    observer.observe(containerRef.current)
+        const map = new google.maps.Map(containerRef.current, {
+          center: { lat: 22.6, lng: 78.9629 },
+          zoom: 5,
+          mapTypeControl: false,
+          streetViewControl: false,
+          rotateControl: false,
+          fullscreenControl: true,
+          clickableIcons: true,
+          gestureHandling: 'greedy',
+          backgroundColor: '#e8eaed',
+        })
+        mapRef.current = map
+
+        trafficLayerRef.current = new google.maps.TrafficLayer()
+        trafficLayerRef.current.setMap(map)
+        geocoderRef.current = new google.maps.Geocoder()
+
+        clickListenerRef.current = map.addListener('click', async (event) => {
+          const activeMode = pickModeRef.current
+          if (!activeMode || pickingRef.current || !event.latLng) return
+
+          const lat = event.latLng.lat()
+          const lon = event.latLng.lng()
+          setPicking(true)
+          pickingRef.current = true
+
+          try {
+            const { results } = await geocoderRef.current.geocode({ location: { lat, lng: lon } })
+            const result = results?.[0]
+            onPickPlaceRef.current?.(activeMode, {
+              google_place_id: result?.place_id,
+              label: result?.formatted_address || 'Pinned location',
+              address: result?.formatted_address || `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+              lat,
+              lon,
+              result_type: 'Google map pin',
+            })
+          } catch {
+            onPickPlaceRef.current?.(activeMode, {
+              label: 'Pinned location',
+              address: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+              lat,
+              lon,
+              result_type: 'Google map pin',
+            })
+          } finally {
+            setPickMode(null)
+            pickModeRef.current = null
+            setPicking(false)
+            pickingRef.current = false
+          }
+        })
+
+        setMapStatus('ready')
+        syncAll({ fit: true })
+      } catch (error) {
+        if (!cancelled) {
+          setMapStatus('error')
+          setMapError(error.message || 'Google Maps failed to load')
+        }
+      }
+    }
+
+    initialise()
 
     return () => {
-      observer.disconnect()
+      cancelled = true
+      if (clickListenerRef.current && window.google?.maps) google.maps.event.removeListener(clickListenerRef.current)
+      clickListenerRef.current = null
+      clearRoutes()
       clearMarkers()
-      readyRef.current = false
-      map.remove()
+      if (trafficLayerRef.current) trafficLayerRef.current.setMap(null)
+      trafficLayerRef.current = null
+      geocoderRef.current = null
       mapRef.current = null
     }
   }, [])
 
-  useEffect(() => { syncAll({ refit: true }) }, [routes, origin, destination])
-  useEffect(() => { renderOverlay(mapRef.current) }, [selectedKind])
   useEffect(() => {
-    const canvas = mapRef.current?.getCanvas()
-    if (canvas) canvas.style.cursor = pickMode ? 'crosshair' : ''
+    if (mapRef.current) syncAll({ fit: true })
+  }, [routes, origin, destination])
+
+  useEffect(() => {
+    if (mapRef.current) syncRoutes(mapRef.current)
+  }, [selectedKind])
+
+  useEffect(() => {
+    if (!mapRef.current) return
+    mapRef.current.setOptions({ draggableCursor: pickMode ? 'crosshair' : null })
   }, [pickMode])
 
-  const hasPreview = !routes?.length && origin?.lat != null && origin?.lon != null && destination?.lat != null && destination?.lon != null
+  const hasPreview = !routes?.length
+    && origin?.lat != null && origin?.lon != null
+    && destination?.lat != null && destination?.lon != null
   const hasAlternativeRoads = (routes || []).some((route) => route.isAlternative)
 
   const togglePickMode = (mode) => {
@@ -351,18 +338,26 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   }
 
   return (
-    <div className="route-map-shell" data-map-ui="v4">
-      <div ref={containerRef} className="route-map" />
-      <svg ref={overlayRef} className="route-svg-overlay" aria-hidden="true" />
+    <div className="route-map-shell google-route-map-shell" data-map-provider="google">
+      <div ref={containerRef} className="route-map google-route-map" />
 
-      <div className="gr-map-pin-controls" role="group" aria-label="Choose locations directly on the map">
+      {mapStatus === 'loading' && <div className="gr-google-map-state">Loading Google Maps + live traffic…</div>}
+      {mapStatus === 'unconfigured' && (
+        <div className="gr-google-map-state error">
+          Add <b>VITE_GOOGLE_MAPS_API_KEY</b> to enable the Google Maps milestone.
+        </div>
+      )}
+      {mapStatus === 'error' && <div className="gr-google-map-state error">{mapError}</div>}
+
+      <div className="gr-google-traffic-chip"><i /> Google live traffic</div>
+
+      <div className="gr-map-pin-controls" role="group" aria-label="Choose locations directly on the Google map">
         <button
           type="button"
           className={pickMode === 'origin' ? 'active' : ''}
           onClick={() => togglePickMode('origin')}
           aria-pressed={pickMode === 'origin'}
           disabled={picking && pickMode !== 'origin'}
-          title={pickMode === 'origin' ? 'Click anywhere on the map to set pickup. Click this button again to cancel.' : 'Set pickup directly on the map'}
         >
           <b>A</b> {pinButtonLabel('origin', 'Pin pickup')}
         </button>
@@ -372,13 +367,12 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
           onClick={() => togglePickMode('destination')}
           aria-pressed={pickMode === 'destination'}
           disabled={picking && pickMode !== 'destination'}
-          title={pickMode === 'destination' ? 'Click anywhere on the map to set delivery. Click this button again to cancel.' : 'Set delivery directly on the map'}
         >
           <b>B</b> {pinButtonLabel('destination', 'Pin delivery')}
         </button>
       </div>
 
-      {hasPreview && <div className="gr-map-preview-chip">A → B coordinate preview · Optimize for live roads</div>}
+      {hasPreview && <div className="gr-map-preview-chip">A → B preview · Optimize for Google traffic-aware roads</div>}
 
       <div className="gr-map-legend">
         <span><i className="pickup-dot" />Pickup</span>
@@ -387,7 +381,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         <span><i className="fastest-line" />Fastest</span>
         <span><i className="balanced-line" />Balanced</span>
         <span><i className="green-line" />Greenest</span>
-        {hasAlternativeRoads && <span><i className="candidate-line" />Other road</span>}
+        {hasAlternativeRoads && <span><i className="candidate-line" />Google alternative</span>}
       </div>
     </div>
   )
