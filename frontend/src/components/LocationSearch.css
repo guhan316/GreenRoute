@@ -1,150 +1,57 @@
-.location-field .autocomplete-panel {
-  padding: 6px;
-  max-height: 360px;
-  overflow-y: auto;
-  border-radius: 16px;
-  border: 1px solid rgba(173,255,211,.18);
-  background: rgba(6,18,12,.985);
-  box-shadow: 0 24px 70px rgba(0,0,0,.5);
-}
-
-.location-field .autocomplete-panel button {
+.google-location-field {
   position: relative;
-  display: grid;
-  grid-template-columns: 34px minmax(0,1fr) 24px;
-  align-items: center;
-  gap: 10px;
-  min-height: 68px;
-  padding: 10px 9px;
+}
+
+.google-autocomplete-shell {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(173,255,211,.11);
   border-radius: 12px;
+  background: rgba(3,13,9,.52);
+  overflow: visible;
+  transition: border .2s ease, box-shadow .2s ease;
 }
 
-.location-field .autocomplete-panel button + button {
-  border-top: 1px solid rgba(173,255,211,.07);
+.google-autocomplete-shell:focus-within {
+  border-color: rgba(53,223,138,.65);
+  box-shadow: 0 0 0 4px rgba(53,223,138,.07);
 }
 
-.location-field .autocomplete-panel button:hover,
-.location-field .autocomplete-panel button.active {
-  background: rgba(53,223,138,.095);
-  outline: none;
+.google-autocomplete-shell.resolved {
+  border-color: rgba(53,223,138,.42);
 }
 
-.place-result-icon,
-.autocomplete-state-icon {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(255,255,255,.055);
-  color: #9fffc9;
-  font-size: .85rem;
-  flex: none;
+.gr-google-place-autocomplete {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  color-scheme: dark;
+  --gmp-mat-color-surface: #07150f;
+  --gmp-mat-color-on-surface: #effff7;
+  --gmp-mat-color-on-surface-variant: #a4b9ae;
+  --gmp-mat-color-primary: #35df8a;
 }
 
-.place-result-copy {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.place-result-copy strong {
-  color: #effff6;
-  font-size: .77rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.place-result-copy > span {
-  color: #9ab0a4;
-  font-size: .67rem;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.place-result-copy small {
-  color: #638f77;
-  font-size: .56rem;
-  letter-spacing: .055em;
-  text-transform: uppercase;
-}
-
-.place-result-enter {
-  color: #6f9984;
-  font-size: .8rem;
-  text-align: center;
-}
-
-.autocomplete-state {
-  min-height: 64px;
-  padding: 11px 10px;
+.google-place-loading,
+.google-place-error {
+  min-height: 44px;
+  padding: 12px 13px;
   display: flex;
   align-items: center;
-  gap: 11px;
-  color: #dff6e9;
+  color: #91aa9d;
+  font-size: .72rem;
 }
 
-.autocomplete-state > div {
-  display: grid;
-  gap: 3px;
+.google-place-error {
+  color: #ffc979;
 }
 
-.autocomplete-state strong {
-  font-size: .73rem;
+.google-place-error b {
+  margin: 0 4px;
+  color: #ffe3b8;
 }
 
-.autocomplete-state small {
-  color: #829b8e;
+.google-place-inline-error {
+  color: #ffc979;
   font-size: .62rem;
-  line-height: 1.4;
-}
-
-.autocomplete-state.error-state .autocomplete-state-icon {
-  background: rgba(255,191,91,.11);
-  color: #ffbf5b;
-}
-
-.autocomplete-spinner {
-  width: 26px;
-  height: 26px;
-  border: 2px solid rgba(159,255,201,.16);
-  border-top-color: #35df8a;
-  border-radius: 50%;
-  animation: greenroute-autocomplete-spin .75s linear infinite;
-  flex: none;
-}
-
-.autocomplete-footer {
-  margin-top: 3px;
-  padding: 7px 9px 4px;
-  border-top: 1px solid rgba(173,255,211,.08);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: #567364;
-  font-size: .53rem;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-}
-
-.autocomplete-footer b {
-  color: #7ea38f;
-  font-size: .55rem;
-}
-
-@keyframes greenroute-autocomplete-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 900px) {
-  .location-field .autocomplete-panel {
-    position: relative;
-    top: auto;
-    margin-top: 4px;
-    max-height: 300px;
-  }
 }

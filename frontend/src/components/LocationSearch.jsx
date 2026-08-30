@@ -1,182 +1,141 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { searchPlaces } from '../lib/api.js'
+import { googleMapsConfigured, loadGoogleMaps } from '../lib/googleMaps.js'
 import './LocationSearch.css'
+
+function latValue(location) {
+  return typeof location?.lat === 'function' ? location.lat() : Number(location?.lat)
+}
+
+function lngValue(location) {
+  return typeof location?.lng === 'function' ? location.lng() : Number(location?.lng)
+}
 
 export default function LocationSearch({ label, text, selected, onTextChange, onSelect, placeholder }) {
   const inputId = useId()
-  const listId = `${inputId}-results`
-  const fieldRef = useRef(null)
-  const requestId = useRef(0)
-  const [results, setResults] = useState([])
-  const [busy, setBusy] = useState(false)
-  const [open, setOpen] = useState(false)
-  const [activeIndex, setActiveIndex] = useState(0)
-  const [searched, setSearched] = useState(false)
-  const [searchFailed, setSearchFailed] = useState(false)
+  const hostRef = useRef(null)
+  const elementRef = useRef(null)
+  const textRef = useRef(text)
+  const onTextChangeRef = useRef(onTextChange)
+  const onSelectRef = useRef(onSelect)
+  const [status, setStatus] = useState(googleMapsConfigured() ? 'loading' : 'unconfigured')
+  const [error, setError] = useState('')
 
-  const query = text.trim()
-  const canSearch = query.length >= 2 && !selected
-  const unresolved = query.length >= 2 && !selected
+  textRef.current = text
+  onTextChangeRef.current = onTextChange
+  onSelectRef.current = onSelect
 
   useEffect(() => {
-    function handleOutsidePointer(event) {
-      if (fieldRef.current && !fieldRef.current.contains(event.target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', handleOutsidePointer)
-    return () => document.removeEventListener('pointerdown', handleOutsidePointer)
-  }, [])
+    let cancelled = false
+    let autocomplete = null
 
-  useEffect(() => {
-    if (!canSearch) {
-      setResults([])
-      setOpen(false)
-      setActiveIndex(0)
-      setSearched(false)
-      setSearchFailed(false)
-      setBusy(false)
-      return undefined
-    }
+    async function mountAutocomplete() {
+      if (!googleMapsConfigured()) return
 
-    const id = ++requestId.current
-    setOpen(true)
-    setBusy(true)
-    setSearched(false)
-    setSearchFailed(false)
-
-    const timer = setTimeout(async () => {
       try {
-        const data = await searchPlaces(query, 10)
-        if (requestId.current === id) {
-          const nextResults = data.results || []
-          setResults(nextResults)
-          setActiveIndex(0)
-          setSearched(true)
+        await loadGoogleMaps()
+        const { PlaceAutocompleteElement } = await google.maps.importLibrary('places')
+        if (cancelled || !hostRef.current) return
+
+        autocomplete = new PlaceAutocompleteElement({
+          includedRegionCodes: ['in'],
+          placeholder,
+          requestedLanguage: 'en',
+          requestedRegion: 'in',
+          value: textRef.current || '',
+        })
+        autocomplete.id = inputId
+        autocomplete.className = 'gr-google-place-autocomplete'
+        autocomplete.setAttribute('aria-label', label)
+
+        const handleInput = () => {
+          const value = autocomplete.value || ''
+          if (value !== textRef.current) onTextChangeRef.current?.(value)
         }
-      } catch {
-        if (requestId.current === id) {
-          setResults([])
-          setSearched(true)
-          setSearchFailed(true)
+
+        const handleSelection = async ({ placePrediction }) => {
+          try {
+            const place = placePrediction.toPlace()
+            await place.fetchFields({
+              fields: ['id', 'displayName', 'formattedAddress', 'location'],
+            })
+            const lat = latValue(place.location)
+            const lon = lngValue(place.location)
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+              throw new Error('Google Places did not return coordinates')
+            }
+
+            const address = place.formattedAddress || place.displayName || autocomplete.value
+            autocomplete.value = address || ''
+            onSelectRef.current?.({
+              google_place_id: place.id,
+              label: place.displayName || address || 'Selected place',
+              address: address || place.displayName || 'Selected place',
+              lat,
+              lon,
+              result_type: 'Google Place',
+            })
+            setError('')
+          } catch (selectionError) {
+            setError(selectionError.message || 'Unable to read this Google place')
+          }
         }
-      } finally {
-        if (requestId.current === id) setBusy(false)
+
+        autocomplete.addEventListener('input', handleInput)
+        autocomplete.addEventListener('gmp-select', handleSelection)
+        hostRef.current.replaceChildren(autocomplete)
+        elementRef.current = autocomplete
+        setStatus('ready')
+
+        autocomplete.__greenrouteCleanup = () => {
+          autocomplete.removeEventListener('input', handleInput)
+          autocomplete.removeEventListener('gmp-select', handleSelection)
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setStatus('error')
+          setError(loadError.message || 'Google Places failed to load')
+        }
       }
-    }, 260)
-
-    return () => clearTimeout(timer)
-  }, [canSearch, query])
-
-  function choose(place) {
-    onSelect(place)
-    setOpen(false)
-    setResults([])
-    setActiveIndex(0)
-    setSearched(false)
-    setSearchFailed(false)
-  }
-
-  function handleKeyDown(event) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      setOpen(false)
-      return
     }
 
-    if (!results.length) return
+    mountAutocomplete()
 
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setOpen(true)
-      setActiveIndex((current) => (current + 1) % results.length)
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setOpen(true)
-      setActiveIndex((current) => (current - 1 + results.length) % results.length)
-    } else if (event.key === 'Enter' && unresolved) {
-      event.preventDefault()
-      choose(results[activeIndex] || results[0])
+    return () => {
+      cancelled = true
+      if (elementRef.current?.__greenrouteCleanup) elementRef.current.__greenrouteCleanup()
+      elementRef.current = null
+      if (hostRef.current) hostRef.current.replaceChildren()
     }
-  }
+  }, [inputId, label, placeholder])
 
-  const panelVisible = open && canSearch
+  useEffect(() => {
+    const autocomplete = elementRef.current
+    if (!autocomplete) return
+    if ((autocomplete.value || '') !== (text || '')) autocomplete.value = text || ''
+  }, [text])
 
   return (
-    <div className="location-field" ref={fieldRef}>
+    <div className="location-field google-location-field">
       <label htmlFor={inputId}>{label}</label>
-      <div className={`location-input-wrap ${selected ? 'resolved' : unresolved ? 'unresolved' : ''}`}>
-        <input
-          id={inputId}
-          value={text}
-          onChange={(event) => onTextChange(event.target.value)}
-          onFocus={() => { if (canSearch) setOpen(true) }}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          autoComplete="off"
-          spellCheck="false"
-          role="combobox"
-          aria-expanded={panelVisible}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={results[activeIndex] ? `${listId}-${activeIndex}` : undefined}
-          required
-        />
-        <i>{busy ? '…' : selected ? '✓' : '⌖'}</i>
+      <div className={`google-autocomplete-shell ${selected ? 'resolved' : ''}`} ref={hostRef}>
+        {status === 'loading' && <div className="google-place-loading">Loading Google Places…</div>}
+        {status === 'unconfigured' && (
+          <div className="google-place-error">
+            Add <b>VITE_GOOGLE_MAPS_API_KEY</b> to enable Google place search.
+          </div>
+        )}
+        {status === 'error' && <div className="google-place-error">{error}</div>}
       </div>
 
       {selected && (
-        <small className="resolved-place">✓ Exact place pinned at {selected.lat.toFixed(5)}, {selected.lon.toFixed(5)}</small>
+        <small className="resolved-place">
+          ✓ Google place pinned at {Number(selected.lat).toFixed(5)}, {Number(selected.lon).toFixed(5)}
+        </small>
       )}
-      {!selected && query.length === 1 && (
-        <small className="location-help">Type one more character to search exact places.</small>
+      {!selected && status === 'ready' && (
+        <small className="location-help">Search Google for an address, business, landmark, road or pincode.</small>
       )}
-
-      {panelVisible && (
-        <div className="place-results autocomplete-panel" id={listId} role="listbox">
-          {busy && (
-            <div className="autocomplete-state" role="status">
-              <span className="autocomplete-spinner" aria-hidden="true" />
-              <div><strong>Searching places…</strong><small>Finding addresses, landmarks and POIs in India</small></div>
-            </div>
-          )}
-
-          {!busy && results.map((place, index) => (
-            <button
-              id={`${listId}-${index}`}
-              key={`${place.tomtom_id || place.label}-${place.lat}-${place.lon}`}
-              type="button"
-              role="option"
-              aria-selected={index === activeIndex}
-              className={index === activeIndex ? 'active' : ''}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => choose(place)}
-            >
-              <span className="place-result-icon" aria-hidden="true">⌖</span>
-              <span className="place-result-copy">
-                <strong>{place.label}</strong>
-                <span>{place.address}</span>
-                <small>{place.result_type || 'Place'}{place.postal_code ? ` · ${place.postal_code}` : ''}</small>
-              </span>
-              {index === activeIndex && <span className="place-result-enter" aria-hidden="true">↵</span>}
-            </button>
-          ))}
-
-          {!busy && searched && !results.length && !searchFailed && (
-            <div className="autocomplete-state">
-              <span className="autocomplete-state-icon" aria-hidden="true">⌕</span>
-              <div><strong>No matching place yet</strong><small>Add locality or pincode, or use the map-pin controls for an exact spot.</small></div>
-            </div>
-          )}
-
-          {!busy && searchFailed && (
-            <div className="autocomplete-state error-state">
-              <span className="autocomplete-state-icon" aria-hidden="true">!</span>
-              <div><strong>Place search unavailable</strong><small>You can still pin the exact pickup or delivery point directly on the map.</small></div>
-            </div>
-          )}
-
-          <div className="autocomplete-footer"><span>Search suggestions</span><b>TomTom</b></div>
-        </div>
-      )}
+      {error && status === 'ready' && <small className="google-place-inline-error">{error}</small>}
     </div>
   )
 }
