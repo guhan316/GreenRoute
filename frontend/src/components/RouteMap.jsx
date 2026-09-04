@@ -1,14 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import * as maplibregl from 'maplibre-gl'
 import { reverseGeocode } from '../lib/api.js'
 import './RouteMap.css'
-
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
-const ROUTE_SOURCE_ID = 'greenroute-routes'
-const ROUTE_CASING_ID = 'greenroute-route-casing'
-const ROUTE_LINE_ID = 'greenroute-route-lines'
-const PREVIEW_CASING_ID = 'greenroute-preview-casing'
-const PREVIEW_LINE_ID = 'greenroute-preview-line'
 
 const ROUTE_COLORS = {
   fastest: '#3f8cff',
@@ -33,35 +25,6 @@ function simplifyCoordinates(points, target = 1600) {
   return sampled
 }
 
-function supportsWebGL2() {
-  try {
-    const canvas = document.createElement('canvas')
-    return Boolean(canvas.getContext('webgl2'))
-  } catch {
-    return false
-  }
-}
-
-function makeMarker(kind, label) {
-  const element = document.createElement('div')
-  element.className = `route-endpoint-marker ${kind}`
-  const badge = document.createElement('span')
-  badge.textContent = kind === 'origin' ? 'A' : 'B'
-  element.appendChild(badge)
-  element.setAttribute('aria-label', label)
-  return element
-}
-
-function makePopupContent(kind, label) {
-  const wrapper = document.createElement('div')
-  const title = document.createElement('strong')
-  const detail = document.createElement('span')
-  title.textContent = kind === 'origin' ? 'Pickup' : 'Delivery'
-  detail.textContent = label
-  wrapper.append(title, document.createElement('br'), detail)
-  return wrapper
-}
-
 function strategyKindsFor(route) {
   if (Array.isArray(route.strategyKinds) && route.strategyKinds.length) return route.strategyKinds
   if (['fastest', 'balanced', 'greenest'].includes(route.kind)) return [route.kind]
@@ -79,117 +42,40 @@ function routeColor(route, selectedKind) {
   return ROUTE_COLORS[strategies[0]] || ROUTE_COLORS.alternative
 }
 
-function routeFeatures(state) {
-  const entries = (state.routes || [])
-    .map((route) => ({ route, coordinates: simplifyCoordinates(cleanCoordinates(route.coordinates)) }))
-    .filter(({ coordinates }) => coordinates.length > 1)
-
-  const ordered = [
-    ...entries.filter(({ route }) => !routeIsSelected(route, state.selectedKind)),
-    ...entries.filter(({ route }) => routeIsSelected(route, state.selectedKind)),
-  ]
-
-  const features = ordered.map(({ route, coordinates }, index) => {
-    const strategies = strategyKindsFor(route)
-    const selected = routeIsSelected(route, state.selectedKind)
-    return {
-      type: 'Feature',
-      id: route.mapKey || route.candidate_id || index,
-      properties: {
-        selected,
-        alternative: Boolean(route.isAlternative || !strategies.length),
-        preview: false,
-        color: routeColor(route, state.selectedKind),
-        strategyKind: strategies.includes(state.selectedKind) ? state.selectedKind : (strategies[0] || ''),
-      },
-      geometry: { type: 'LineString', coordinates },
-    }
-  })
-
-  if (!features.length) {
-    const endpoints = [state.origin, state.destination]
-      .filter((place) => place?.lat != null && place?.lon != null)
-      .map((place) => [Number(place.lon), Number(place.lat)])
-      .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat))
-    if (endpoints.length === 2) {
-      features.push({
-        type: 'Feature',
-        id: 'coordinate-preview',
-        properties: {
-          selected: false,
-          alternative: false,
-          preview: true,
-          color: '#20d982',
-          strategyKind: '',
-        },
-        geometry: { type: 'LineString', coordinates: endpoints },
-      })
-    }
-  }
-
-  return { type: 'FeatureCollection', features }
+function toLeafletPoints(coordinates) {
+  return simplifyCoordinates(cleanCoordinates(coordinates)).map(([lon, lat]) => [lat, lon])
 }
 
-function addRouteLayers(map, data) {
-  if (map.getSource(ROUTE_SOURCE_ID)) {
-    map.getSource(ROUTE_SOURCE_ID).setData(data)
-    return
-  }
+function endpointLatLng(place) {
+  if (place?.lat == null || place?.lon == null) return null
+  const lat = Number(place.lat)
+  const lon = Number(place.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  return [lat, lon]
+}
 
-  map.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data })
-  map.addLayer({
-    id: ROUTE_CASING_ID,
-    type: 'line',
-    source: ROUTE_SOURCE_ID,
-    filter: ['==', ['get', 'preview'], false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': ['case', ['get', 'selected'], '#ffffff', ['get', 'alternative'], '#26312d', '#18231f'],
-      'line-width': ['case', ['get', 'selected'], 11, ['get', 'alternative'], 7, 8],
-      'line-opacity': ['case', ['get', 'selected'], 0.96, ['get', 'alternative'], 0.58, 0.76],
-    },
-  })
-  map.addLayer({
-    id: ROUTE_LINE_ID,
-    type: 'line',
-    source: ROUTE_SOURCE_ID,
-    filter: ['==', ['get', 'preview'], false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': ['case', ['get', 'selected'], 7, ['get', 'alternative'], 4, 4.5],
-      'line-opacity': ['case', ['get', 'selected'], 1, ['get', 'alternative'], 0.7, 0.86],
-    },
-  })
-  map.addLayer({
-    id: PREVIEW_CASING_ID,
-    type: 'line',
-    source: ROUTE_SOURCE_ID,
-    filter: ['==', ['get', 'preview'], true],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#0a1b14', 'line-width': 8, 'line-opacity': 0.72 },
-  })
-  map.addLayer({
-    id: PREVIEW_LINE_ID,
-    type: 'line',
-    source: ROUTE_SOURCE_ID,
-    filter: ['==', ['get', 'preview'], true],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#20d982', 'line-width': 4, 'line-dasharray': [2, 2], 'line-opacity': 1 },
-  })
+function safePopup(kind, place, fallback) {
+  const wrapper = document.createElement('div')
+  const title = document.createElement('strong')
+  const detail = document.createElement('span')
+  title.textContent = kind === 'origin' ? 'Pickup' : 'Delivery'
+  detail.textContent = place?.address || place?.label || fallback
+  wrapper.append(title, document.createElement('br'), detail)
+  return wrapper
 }
 
 export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
-  const markersRef = useRef([])
+  const routeLayerRef = useRef(null)
+  const markerLayerRef = useRef(null)
   const readyRef = useRef(false)
   const stateRef = useRef({ routes: [], selectedKind: 'balanced', origin: null, destination: null })
-  const fitSignatureRef = useRef('')
   const pickModeRef = useRef(null)
   const pickingRef = useRef(false)
   const onPickPlaceRef = useRef(onPickPlace)
   const onSelectKindRef = useRef(onSelectKind)
+  const fitSignatureRef = useRef('')
   const [pickMode, setPickMode] = useState(null)
   const [picking, setPicking] = useState(false)
   const [mapError, setMapError] = useState('')
@@ -200,50 +86,116 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   onPickPlaceRef.current = onPickPlace
   onSelectKindRef.current = onSelectKind
 
-  const endpointCoordinates = (state) => {
-    const result = []
-    for (const place of [state.origin, state.destination]) {
-      if (place?.lat == null || place?.lon == null) continue
-      const point = [Number(place.lon), Number(place.lat)]
-      if (Number.isFinite(point[0]) && Number.isFinite(point[1])) result.push(point)
-    }
-    return result
+  function markerIcon(kind) {
+    const L = window.L
+    return L.divIcon({
+      className: 'leaflet-greenroute-marker-wrap',
+      html: `<div class="route-endpoint-marker ${kind}"><span>${kind === 'origin' ? 'A' : 'B'}</span></div>`,
+      iconSize: [34, 42],
+      iconAnchor: [17, 42],
+      popupAnchor: [0, -42],
+    })
   }
 
-  function clearMarkers() {
-    markersRef.current.forEach((marker) => marker.remove())
-    markersRef.current = []
-  }
+  function renderMarkers() {
+    const L = window.L
+    const layer = markerLayerRef.current
+    if (!L || !layer) return
+    layer.clearLayers()
 
-  function syncMarkers(map) {
-    clearMarkers()
     const add = (place, kind, fallback) => {
-      if (place?.lat == null || place?.lon == null) return
-      const coordinates = [Number(place.lon), Number(place.lat)]
-      if (!Number.isFinite(coordinates[0]) || !Number.isFinite(coordinates[1])) return
-      const label = place.address || place.label || fallback
-      const popup = new maplibregl.Popup({ offset: 24, closeButton: false })
-        .setDOMContent(makePopupContent(kind, label))
-      const marker = new maplibregl.Marker({ element: makeMarker(kind, label), anchor: 'bottom' })
-        .setLngLat(coordinates)
-        .setPopup(popup)
-        .addTo(map)
-      marker.getElement().style.zIndex = '25'
-      markersRef.current.push(marker)
+      const latLng = endpointLatLng(place)
+      if (!latLng) return
+      L.marker(latLng, { icon: markerIcon(kind), keyboard: true, riseOnHover: true })
+        .bindPopup(safePopup(kind, place, fallback))
+        .addTo(layer)
     }
+
     add(stateRef.current.origin, 'origin', 'Pickup')
     add(stateRef.current.destination, 'destination', 'Delivery')
   }
 
-  function syncRoutes(map) {
-    if (!map || !readyRef.current) return
-    addRouteLayers(map, routeFeatures(stateRef.current))
+  function renderRoutes() {
+    const L = window.L
+    const layer = routeLayerRef.current
+    if (!L || !layer) return
+    layer.clearLayers()
+
+    const entries = (stateRef.current.routes || [])
+      .map((route) => ({ route, points: toLeafletPoints(route.coordinates) }))
+      .filter(({ points }) => points.length > 1)
+
+    const ordered = [
+      ...entries.filter(({ route }) => !routeIsSelected(route, stateRef.current.selectedKind)),
+      ...entries.filter(({ route }) => routeIsSelected(route, stateRef.current.selectedKind)),
+    ]
+
+    if (!ordered.length) {
+      const a = endpointLatLng(stateRef.current.origin)
+      const b = endpointLatLng(stateRef.current.destination)
+      if (a && b) {
+        L.polyline([a, b], {
+          color: '#092017',
+          weight: 8,
+          opacity: 0.68,
+          interactive: false,
+        }).addTo(layer)
+        L.polyline([a, b], {
+          color: '#20d982',
+          weight: 4,
+          opacity: 1,
+          dashArray: '10 9',
+          interactive: false,
+        }).addTo(layer)
+      }
+      return
+    }
+
+    for (const { route, points } of ordered) {
+      const selected = routeIsSelected(route, stateRef.current.selectedKind)
+      const alternative = Boolean(route.isAlternative || !strategyKindsFor(route).length)
+
+      L.polyline(points, {
+        color: selected ? '#ffffff' : alternative ? '#26312d' : '#18231f',
+        weight: selected ? 11 : alternative ? 7 : 8,
+        opacity: selected ? 0.96 : alternative ? 0.58 : 0.76,
+        interactive: false,
+      }).addTo(layer)
+
+      const routeLine = L.polyline(points, {
+        color: routeColor(route, stateRef.current.selectedKind),
+        weight: selected ? 7 : alternative ? 4 : 4.5,
+        opacity: selected ? 1 : alternative ? 0.7 : 0.86,
+        bubblingMouseEvents: false,
+      }).addTo(layer)
+
+      const strategies = strategyKindsFor(route)
+      if (strategies.length) {
+        routeLine.on('click', (event) => {
+          L.DomEvent.stopPropagation(event)
+          if (pickModeRef.current) return
+          const targetKind = strategies.includes(stateRef.current.selectedKind)
+            ? stateRef.current.selectedKind
+            : strategies[0]
+          onSelectKindRef.current?.(targetKind)
+        })
+        routeLine.on('mouseover', () => {
+          if (!pickModeRef.current && mapRef.current) mapRef.current.getContainer().style.cursor = 'pointer'
+        })
+        routeLine.on('mouseout', () => {
+          if (mapRef.current) mapRef.current.getContainer().style.cursor = pickModeRef.current ? 'crosshair' : ''
+        })
+      }
+    }
   }
 
-  function fitToState(map, force = false) {
-    const state = stateRef.current
-    const routePoints = (state.routes || []).flatMap((route) => cleanCoordinates(route.coordinates))
-    const endpoints = endpointCoordinates(state)
+  function fitToState(force = false) {
+    const L = window.L
+    const map = mapRef.current
+    if (!L || !map || !readyRef.current) return
+
+    const routePoints = (stateRef.current.routes || []).flatMap((route) => toLeafletPoints(route.coordinates))
+    const endpoints = [endpointLatLng(stateRef.current.origin), endpointLatLng(stateRef.current.destination)].filter(Boolean)
     const allPoints = [...routePoints, ...endpoints]
     if (!allPoints.length) return
 
@@ -251,92 +203,76 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     if (!force && fitSignatureRef.current === signature) return
     fitSignatureRef.current = signature
 
-    const bounds = allPoints.reduce(
-      (acc, coordinate) => acc.extend(coordinate),
-      new maplibregl.LngLatBounds(allPoints[0], allPoints[0]),
-    )
-    map.fitBounds(bounds, {
-      padding: { top: 110, right: 64, bottom: 94, left: 64 },
-      duration: 700,
-      maxZoom: endpoints.length === 1 ? 15 : 12,
+    if (allPoints.length === 1) {
+      map.setView(allPoints[0], 14, { animate: true })
+      return
+    }
+
+    map.fitBounds(L.latLngBounds(allPoints), {
+      paddingTopLeft: [64, 110],
+      paddingBottomRight: [64, 94],
+      maxZoom: 12,
+      animate: true,
+      duration: 0.65,
     })
   }
 
   function syncAll({ refit = false } = {}) {
-    const map = mapRef.current
-    if (!map || !readyRef.current) return
-    syncRoutes(map)
-    syncMarkers(map)
-    fitToState(map, refit)
+    if (!readyRef.current) return
+    // These are deliberately independent. A route rendering problem must never
+    // prevent pickup/delivery markers or camera fitting from working.
+    try { renderRoutes() } catch (error) { console.error('GreenRoute Leaflet route render failed', error) }
+    try { renderMarkers() } catch (error) { console.error('GreenRoute Leaflet marker render failed', error) }
+    try { fitToState(refit) } catch (error) { console.error('GreenRoute Leaflet fitBounds failed', error) }
   }
 
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return undefined
-    if (!supportsWebGL2()) {
-      setMapError('This browser cannot display the interactive map because WebGL2 is unavailable.')
+    const L = window.L
+    if (!L) {
+      setMapError('Leaflet could not be loaded. Check the connection and refresh the page.')
       return undefined
     }
 
     let map
     try {
-      map = new maplibregl.Map({
-        container: containerRef.current,
-        style: MAP_STYLE,
-        center: [78.9629, 22.6],
-        zoom: 4.1,
-        pitch: 24,
-        bearing: 0,
+      map = L.map(containerRef.current, {
+        center: [22.6, 78.9629],
+        zoom: 5,
+        zoomControl: false,
         attributionControl: true,
+        preferCanvas: true,
       })
-      map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
-      map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 110 }), 'bottom-left')
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(map)
+      L.control.zoom({ position: 'topright' }).addTo(map)
+      L.control.scale({ position: 'bottomleft', metric: true, imperial: false, maxWidth: 110 }).addTo(map)
+      routeLayerRef.current = L.layerGroup().addTo(map)
+      markerLayerRef.current = L.layerGroup().addTo(map)
       mapRef.current = map
       setMapError('')
-    } catch {
-      setMapError('The interactive map could not start. Route search and carbon calculations are still available.')
+    } catch (error) {
+      console.error('GreenRoute Leaflet startup failed', error)
+      setMapError('The interactive Leaflet map could not start. Route calculations are still available.')
       return undefined
     }
 
-    const ready = () => {
-      readyRef.current = true
-      setMapError('')
-      map.resize()
-      syncAll({ refit: true })
-    }
-    const handleStyleError = () => {
-      if (!readyRef.current) setMapError('The map style could not be loaded. Check the connection and try again.')
-    }
-    const selectRoute = (event) => {
-      if (pickModeRef.current) return
-      const kind = event.features?.[0]?.properties?.strategyKind
-      if (kind) onSelectKindRef.current?.(kind)
-    }
-    const showRouteCursor = () => {
-      if (!pickModeRef.current) map.getCanvas().style.cursor = 'pointer'
-    }
-    const resetRouteCursor = () => {
-      map.getCanvas().style.cursor = pickModeRef.current ? 'crosshair' : ''
-    }
-
-    map.on('load', ready)
-    map.once('error', handleStyleError)
-    map.on('click', ROUTE_LINE_ID, selectRoute)
-    map.on('mouseenter', ROUTE_LINE_ID, showRouteCursor)
-    map.on('mouseleave', ROUTE_LINE_ID, resetRouteCursor)
-    map.on('click', async (event) => {
+    const handleMapClick = async (event) => {
       const activePickMode = pickModeRef.current
       if (!activePickMode || pickingRef.current) return
       setPicking(true)
       pickingRef.current = true
       try {
-        const place = await reverseGeocode(event.lngLat.lat, event.lngLat.lng)
+        const place = await reverseGeocode(event.latlng.lat, event.latlng.lng)
         onPickPlaceRef.current?.(activePickMode, place)
       } catch {
         onPickPlaceRef.current?.(activePickMode, {
           label: 'Pinned location',
-          address: `${event.lngLat.lat.toFixed(6)}, ${event.lngLat.lng.toFixed(6)}`,
-          lat: event.lngLat.lat,
-          lon: event.lngLat.lng,
+          address: `${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`,
+          lat: event.latlng.lat,
+          lon: event.latlng.lng,
           result_type: 'Map pin',
         })
       } finally {
@@ -345,25 +281,34 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         setPicking(false)
         pickingRef.current = false
       }
+    }
+
+    map.on('click', handleMapClick)
+    readyRef.current = true
+    requestAnimationFrame(() => {
+      map.invalidateSize()
+      syncAll({ refit: true })
     })
 
-    const observer = new ResizeObserver(() => map.resize())
+    const observer = new ResizeObserver(() => map.invalidateSize(false))
     observer.observe(containerRef.current)
 
     return () => {
       observer.disconnect()
-      clearMarkers()
+      map.off('click', handleMapClick)
       readyRef.current = false
+      routeLayerRef.current = null
+      markerLayerRef.current = null
       map.remove()
       mapRef.current = null
     }
   }, [])
 
   useEffect(() => { syncAll({ refit: true }) }, [routes, origin, destination])
-  useEffect(() => { syncRoutes(mapRef.current) }, [selectedKind])
+  useEffect(() => { syncAll() }, [selectedKind])
   useEffect(() => {
-    const canvas = mapRef.current?.getCanvas()
-    if (canvas) canvas.style.cursor = pickMode ? 'crosshair' : ''
+    const container = mapRef.current?.getContainer()
+    if (container) container.style.cursor = pickMode ? 'crosshair' : ''
   }, [pickMode])
 
   const hasPreview = !routes?.length && origin?.lat != null && origin?.lon != null && destination?.lat != null && destination?.lon != null
@@ -381,8 +326,8 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   }
 
   return (
-    <div className="route-map-shell" data-map-ui="v5">
-      <div ref={containerRef} className={`route-map ${mapError ? 'is-unavailable' : ''}`} />
+    <div className="route-map-shell" data-map-engine="leaflet">
+      <div ref={containerRef} className={`route-map leaflet-route-map ${mapError ? 'is-unavailable' : ''}`} />
 
       {mapError && (
         <div className="map-fallback" role="status">
