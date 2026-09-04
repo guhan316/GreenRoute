@@ -22,7 +22,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.6.0')
+app = FastAPI(title='GreenRoute API', version='0.7.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -46,28 +46,37 @@ def _require_persistence() -> None:
         raise HTTPException(status_code=503, detail='Supabase persistence is not configured on the GreenRoute backend')
 
 
+async def _resolve_route_place(value):
+    if hasattr(value, 'lat') and hasattr(value, 'lon'):
+        return value.model_dump() if hasattr(value, 'model_dump') else dict(value)
+    if settings.tomtom_api_key:
+        return await TomTomClient(settings.tomtom_api_key).resolve_location(value)
+    raise ValueError(
+        'Exact coordinates are required when TomTom search is not configured. '
+        'Pin the pickup and delivery directly on the map.'
+    )
+
+
 @app.get('/health')
 def health():
     provider_chain = []
-    if settings.tomtom_api_key:
-        provider_chain.append('tomtom')
     if settings.graphhopper_api_key:
-        provider_chain.append('graphhopper-fallback')
+        provider_chain.append('graphhopper')
+    if settings.tomtom_api_key:
+        provider_chain.append('tomtom-fallback' if settings.graphhopper_api_key else 'tomtom')
     if not provider_chain and settings.demo_fallback_enabled:
         provider_chain.append('demo')
 
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.6.0',
+        'version': '0.7.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
+        'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),
         'routing_provider_chain': provider_chain,
         'demo_fallback_enabled': settings.demo_fallback_enabled,
-        # Precise search and map-pin lookup currently use TomTom, so the UI is
-        # considered live only when TomTom is configured. GraphHopper is a road
-        # calculation resilience layer rather than a replacement geocoder.
-        'routing_mode': 'live' if settings.tomtom_api_key else 'demo',
+        'routing_mode': 'live' if (settings.graphhopper_api_key or settings.tomtom_api_key) else 'demo',
         'supabase_persistence_configured': persistence.configured,
         'vehicle_catalog_configured': catalog.configured,
     }
@@ -90,7 +99,7 @@ async def vehicle_catalog():
 @app.get('/api/places/search')
 async def place_search(q: str = Query(min_length=2, max_length=180), limit: int = Query(default=10, ge=1, le=10)):
     if not settings.tomtom_api_key:
-        raise HTTPException(status_code=503, detail='TomTom is required for precise place search')
+        raise HTTPException(status_code=503, detail='Typed place search is temporarily using TomTom; use map pinning when it is not configured')
     try:
         client = TomTomClient(settings.tomtom_api_key)
         results = await client.search_places(q, limit=limit)
@@ -102,7 +111,13 @@ async def place_search(q: str = Query(min_length=2, max_length=180), limit: int 
 @app.get('/api/places/reverse')
 async def reverse_place(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180)):
     if not settings.tomtom_api_key:
-        raise HTTPException(status_code=503, detail='TomTom is required for map-pin address lookup')
+        return {
+            'label': 'Pinned location',
+            'address': f'{lat:.6f}, {lon:.6f}',
+            'lat': lat,
+            'lon': lon,
+            'result_type': 'Map pin',
+        }
     try:
         client = TomTomClient(settings.tomtom_api_key)
         return await client.reverse_geocode(lat, lon)
@@ -122,14 +137,42 @@ async def optimize_routes(request: RouteOptimizationRequest):
         routing_provider = 'demo'
         traffic_aware = False
 
-        if settings.tomtom_api_key:
+        if settings.graphhopper_api_key or settings.tomtom_api_key:
             mode = 'live'
-            client = TomTomClient(settings.tomtom_api_key)
-            origin = await client.resolve_location(request.origin)
-            destination = await client.resolve_location(request.destination)
+            origin = await _resolve_route_place(request.origin)
+            destination = await _resolve_route_place(request.destination)
 
-            try:
-                candidates = await client.calculate_routes(
+            if settings.graphhopper_api_key:
+                try:
+                    graphhopper = GraphHopperClient(settings.graphhopper_api_key)
+                    candidates = await graphhopper.calculate_routes(origin, destination)
+                    routing_provider = 'graphhopper'
+                    traffic_aware = False
+                    notice = (
+                        'GraphHopper provided real OpenStreetMap-based road candidates. '
+                        'ETA is a road-network estimate; live traffic delay is not claimed for this provider.'
+                    )
+                except Exception as graphhopper_error:
+                    if not settings.tomtom_api_key:
+                        raise
+                    tomtom = TomTomClient(settings.tomtom_api_key)
+                    candidates = await tomtom.calculate_routes(
+                        origin,
+                        destination,
+                        vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
+                        max_speed_kmph=profile.max_speed_kmph,
+                        departure_time=request.departure_time,
+                        combustion=profile.fuel_type != 'electric',
+                    )
+                    routing_provider = 'tomtom-fallback'
+                    traffic_aware = True
+                    notice = (
+                        'GraphHopper routing was temporarily unavailable, so GreenRoute used TomTom as '
+                        'a traffic-aware routing fallback.'
+                    )
+            else:
+                tomtom = TomTomClient(settings.tomtom_api_key)
+                candidates = await tomtom.calculate_routes(
                     origin,
                     destination,
                     vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
@@ -139,22 +182,10 @@ async def optimize_routes(request: RouteOptimizationRequest):
                 )
                 routing_provider = 'tomtom'
                 traffic_aware = True
-                notice = 'Live TomTom traffic-aware route candidates using selected place coordinates.'
-            except Exception as tomtom_error:
-                if not settings.graphhopper_api_key:
-                    raise
-                fallback_client = GraphHopperClient(settings.graphhopper_api_key)
-                candidates = await fallback_client.calculate_routes(origin, destination)
-                routing_provider = 'graphhopper-fallback'
-                traffic_aware = False
-                notice = (
-                    'TomTom routing was temporarily unavailable, so GreenRoute used the GraphHopper '
-                    'road-routing fallback. Route geometry and ETA are real-road estimates, but live '
-                    'traffic delay is unavailable for this fallback result.'
-                )
+                notice = 'TomTom provided live traffic-aware route candidates.'
         else:
             if not settings.demo_fallback_enabled:
-                raise ValueError('TOMTOM_API_KEY is required when demo fallback is disabled')
+                raise ValueError('Configure GRAPHOPPER_API_KEY or TOMTOM_API_KEY when demo fallback is disabled')
             mode = 'demo'
             origin_text = request.origin.label if hasattr(request.origin, 'label') else str(request.origin)
             destination_text = request.destination.label if hasattr(request.destination, 'label') else str(request.destination)
@@ -163,7 +194,7 @@ async def optimize_routes(request: RouteOptimizationRequest):
             candidates = calculate_demo_routes(origin, destination)
             notice = (
                 'Synthetic development routes are being shown. '
-                'Add TOMTOM_API_KEY to switch to real roads and live traffic.'
+                'Add GRAPHOPPER_API_KEY to switch to real OpenStreetMap road routing.'
             )
 
         measured = [

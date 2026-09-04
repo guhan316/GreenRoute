@@ -5,11 +5,12 @@ ROUTING_URL = 'https://graphhopper.com/api/1/route'
 
 
 class GraphHopperClient:
-    """Fallback road-routing client used when TomTom routing is unavailable.
+    """Primary road-routing client for GreenRoute.
 
-    GreenRoute keeps TomTom as the primary provider because TomTom supplies live
-    traffic. GraphHopper is deliberately used only as a resilience layer, so a
-    temporary TomTom routing failure does not make the planner unusable.
+    GraphHopper supplies real OpenStreetMap-based road geometry and ETA estimates.
+    It is intentionally treated as non-traffic-aware unless a separate live-traffic
+    provider is used. TomTom can remain as a temporary fallback while GreenRoute
+    migrates away from depending on it for routing.
     """
 
     def __init__(self, api_key: str):
@@ -33,12 +34,11 @@ class GraphHopperClient:
 
             parsed.append({
                 'candidate_id': f'graphhopper-{index + 1}',
-                'source_route_type': 'graphhopper-fallback',
+                'source_route_type': 'graphhopper',
                 'distance_km': round(distance_m / 1000, 2),
                 'duration_minutes': round(duration_ms / 60000, 2),
-                # GraphHopper fallback routes are not traffic-aware. Keeping this
-                # explicit prevents GreenRoute from pretending that traffic data
-                # was measured when the fallback provider is active.
+                # GraphHopper routes are real-road estimates but are not live-traffic
+                # measurements in this configuration.
                 'traffic_delay_minutes': 0.0,
                 'coordinates': coordinates,
             })
@@ -81,8 +81,7 @@ class GraphHopperClient:
 
     async def calculate_routes(self, origin: dict, destination: dict) -> list[dict]:
         # Prefer up to three physical alternatives. If the account/profile does
-        # not permit alternative routing, retry once with the standard route so
-        # the resilience layer still fulfils its purpose.
+        # not permit alternative routing, retry once with the standard route.
         try:
             return await self._request(origin, destination, alternatives=True)
         except Exception as alternative_error:
@@ -90,5 +89,5 @@ class GraphHopperClient:
                 return await self._request(origin, destination, alternatives=False)
             except Exception as standard_error:
                 raise ValueError(
-                    f'GraphHopper fallback failed: {standard_error}'
+                    f'GraphHopper routing failed: {standard_error}'
                 ) from alternative_error

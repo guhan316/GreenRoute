@@ -9,7 +9,7 @@ from app.services.graphhopper import GraphHopperClient
 from app.services.tomtom import TomTomClient
 
 
-class GraphHopperFallbackTests(unittest.TestCase):
+class GraphHopperRoutingTests(unittest.TestCase):
     def test_graphhopper_parser_returns_greenroute_candidates(self):
         payload = {
             'paths': [
@@ -29,7 +29,7 @@ class GraphHopperFallbackTests(unittest.TestCase):
         }
         routes = GraphHopperClient._parse_paths(payload)
         self.assertEqual(len(routes), 1)
-        self.assertEqual(routes[0]['source_route_type'], 'graphhopper-fallback')
+        self.assertEqual(routes[0]['source_route_type'], 'graphhopper')
         self.assertEqual(routes[0]['distance_km'], 172.45)
         self.assertEqual(routes[0]['duration_minutes'], 180.0)
         self.assertEqual(routes[0]['traffic_delay_minutes'], 0.0)
@@ -45,13 +45,13 @@ class GraphHopperFallbackTests(unittest.TestCase):
         }
         self.assertEqual(GraphHopperClient._parse_paths(payload), [])
 
-    def test_api_uses_graphhopper_when_tomtom_routing_fails(self):
+    def test_api_uses_graphhopper_as_primary_router(self):
         origin = {'label': 'Puducherry', 'address': 'Puducherry', 'lat': 11.9416, 'lon': 79.8083}
         destination = {'label': 'Chennai', 'address': 'Chennai', 'lat': 13.0827, 'lon': 80.2707}
-        fallback_routes = [
+        graphhopper_routes = [
             {
                 'candidate_id': 'graphhopper-1',
-                'source_route_type': 'graphhopper-fallback',
+                'source_route_type': 'graphhopper',
                 'distance_km': 155.0,
                 'duration_minutes': 190.0,
                 'traffic_delay_minutes': 0.0,
@@ -59,29 +59,22 @@ class GraphHopperFallbackTests(unittest.TestCase):
             },
             {
                 'candidate_id': 'graphhopper-2',
-                'source_route_type': 'graphhopper-fallback',
+                'source_route_type': 'graphhopper',
                 'distance_km': 162.0,
                 'duration_minutes': 205.0,
                 'traffic_delay_minutes': 0.0,
                 'coordinates': [[79.8083, 11.9416], [79.95, 12.5], [80.2707, 13.0827]],
             },
-            {
-                'candidate_id': 'graphhopper-3',
-                'source_route_type': 'graphhopper-fallback',
-                'distance_km': 170.0,
-                'duration_minutes': 220.0,
-                'traffic_delay_minutes': 0.0,
-                'coordinates': [[79.8083, 11.9416], [79.7, 12.6], [80.2707, 13.0827]],
-            },
         ]
 
         client = TestClient(app)
+        tomtom_routes = AsyncMock()
         with (
             patch.object(main_module.settings, 'tomtom_api_key', 'test-tomtom'),
             patch.object(main_module.settings, 'graphhopper_api_key', 'test-graphhopper'),
             patch.object(TomTomClient, 'resolve_location', new=AsyncMock(side_effect=[origin, destination])),
-            patch.object(TomTomClient, 'calculate_routes', new=AsyncMock(side_effect=ValueError('temporary TomTom failure'))),
-            patch.object(GraphHopperClient, 'calculate_routes', new=AsyncMock(return_value=fallback_routes)),
+            patch.object(TomTomClient, 'calculate_routes', new=tomtom_routes),
+            patch.object(GraphHopperClient, 'calculate_routes', new=AsyncMock(return_value=graphhopper_routes)),
         ):
             response = client.post('/api/routes/optimize', json={
                 'origin': 'Puducherry',
@@ -95,10 +88,48 @@ class GraphHopperFallbackTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         data = response.json()
         self.assertEqual(data['mode'], 'live')
-        self.assertEqual(data['routing_provider'], 'graphhopper-fallback')
+        self.assertEqual(data['routing_provider'], 'graphhopper')
         self.assertFalse(data['traffic_aware'])
         self.assertGreaterEqual(data['candidate_count'], 1)
         self.assertIn('GraphHopper', data['notice'])
+        tomtom_routes.assert_not_awaited()
+
+    def test_api_falls_back_to_tomtom_when_graphhopper_fails(self):
+        origin = {'label': 'Puducherry', 'address': 'Puducherry', 'lat': 11.9416, 'lon': 79.8083}
+        destination = {'label': 'Chennai', 'address': 'Chennai', 'lat': 13.0827, 'lon': 80.2707}
+        tomtom_routes = [
+            {
+                'candidate_id': 'fast-1',
+                'source_route_type': 'fast',
+                'distance_km': 154.0,
+                'duration_minutes': 175.0,
+                'traffic_delay_minutes': 14.0,
+                'coordinates': [[79.8083, 11.9416], [80.2707, 13.0827]],
+            }
+        ]
+
+        client = TestClient(app)
+        with (
+            patch.object(main_module.settings, 'tomtom_api_key', 'test-tomtom'),
+            patch.object(main_module.settings, 'graphhopper_api_key', 'test-graphhopper'),
+            patch.object(TomTomClient, 'resolve_location', new=AsyncMock(side_effect=[origin, destination])),
+            patch.object(GraphHopperClient, 'calculate_routes', new=AsyncMock(side_effect=ValueError('temporary GraphHopper failure'))),
+            patch.object(TomTomClient, 'calculate_routes', new=AsyncMock(return_value=tomtom_routes)),
+        ):
+            response = client.post('/api/routes/optimize', json={
+                'origin': 'Puducherry',
+                'destination': 'Chennai',
+                'load_kg': 500,
+                'vehicle_type': 'lcv',
+                'fuel_price_per_litre': 92.5,
+                'departure_time': 'now',
+            })
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data['routing_provider'], 'tomtom-fallback')
+        self.assertTrue(data['traffic_aware'])
+        self.assertIn('fallback', data['notice'].lower())
 
 
 if __name__ == '__main__':
