@@ -13,6 +13,7 @@ from .services.carbon import (
 )
 from .services.catalog import VehicleCatalogService
 from .services.demo import calculate_demo_routes, geocode_demo
+from .services.graphhopper import GraphHopperClient
 from .services.persistence import SupabasePersistence
 from .services.scoring import build_recommendations
 from .services.tomtom import TomTomClient
@@ -21,7 +22,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.5.0')
+app = FastAPI(title='GreenRoute API', version='0.6.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -47,12 +48,25 @@ def _require_persistence() -> None:
 
 @app.get('/health')
 def health():
+    provider_chain = []
+    if settings.tomtom_api_key:
+        provider_chain.append('tomtom')
+    if settings.graphhopper_api_key:
+        provider_chain.append('graphhopper-fallback')
+    if not provider_chain and settings.demo_fallback_enabled:
+        provider_chain.append('demo')
+
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.5.0',
+        'version': '0.6.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
+        'graphhopper_configured': bool(settings.graphhopper_api_key),
+        'routing_provider_chain': provider_chain,
         'demo_fallback_enabled': settings.demo_fallback_enabled,
+        # Precise search and map-pin lookup currently use TomTom, so the UI is
+        # considered live only when TomTom is configured. GraphHopper is a road
+        # calculation resilience layer rather than a replacement geocoder.
         'routing_mode': 'live' if settings.tomtom_api_key else 'demo',
         'supabase_persistence_configured': persistence.configured,
         'vehicle_catalog_configured': catalog.configured,
@@ -105,20 +119,39 @@ async def optimize_routes(request: RouteOptimizationRequest):
                 f'Load exceeds {profile.label} payload capacity ({profile.max_payload_kg:.0f} kg)'
             )
 
+        routing_provider = 'demo'
+        traffic_aware = False
+
         if settings.tomtom_api_key:
             mode = 'live'
             client = TomTomClient(settings.tomtom_api_key)
             origin = await client.resolve_location(request.origin)
             destination = await client.resolve_location(request.destination)
-            candidates = await client.calculate_routes(
-                origin,
-                destination,
-                vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
-                max_speed_kmph=profile.max_speed_kmph,
-                departure_time=request.departure_time,
-                combustion=profile.fuel_type != 'electric',
-            )
-            notice = 'Live TomTom traffic-aware route candidates using selected place coordinates.'
+
+            try:
+                candidates = await client.calculate_routes(
+                    origin,
+                    destination,
+                    vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
+                    max_speed_kmph=profile.max_speed_kmph,
+                    departure_time=request.departure_time,
+                    combustion=profile.fuel_type != 'electric',
+                )
+                routing_provider = 'tomtom'
+                traffic_aware = True
+                notice = 'Live TomTom traffic-aware route candidates using selected place coordinates.'
+            except Exception as tomtom_error:
+                if not settings.graphhopper_api_key:
+                    raise
+                fallback_client = GraphHopperClient(settings.graphhopper_api_key)
+                candidates = await fallback_client.calculate_routes(origin, destination)
+                routing_provider = 'graphhopper-fallback'
+                traffic_aware = False
+                notice = (
+                    'TomTom routing was temporarily unavailable, so GreenRoute used the GraphHopper '
+                    'road-routing fallback. Route geometry and ETA are real-road estimates, but live '
+                    'traffic delay is unavailable for this fallback result.'
+                )
         else:
             if not settings.demo_fallback_enabled:
                 raise ValueError('TOMTOM_API_KEY is required when demo fallback is disabled')
@@ -146,6 +179,8 @@ async def optimize_routes(request: RouteOptimizationRequest):
         result = build_recommendations(measured)
         return {
             'mode': mode,
+            'routing_provider': routing_provider,
+            'traffic_aware': traffic_aware,
             'notice': notice,
             'origin': origin,
             'destination': destination,
