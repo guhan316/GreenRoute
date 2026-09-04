@@ -283,60 +283,120 @@ export default function App() {
     try { await deleteSavedTrip(runId, session.access_token); setMessage('Saved trip removed.'); await loadCloudData(session) } catch (error) { setMessage(error.message) }
   }
 
-  const modeLabel = routingMode === 'live' ? '● Live traffic' : routingMode === 'demo' ? '◇ Demo mode' : routingMode === 'offline' ? '○ Backend offline' : '… Connecting'
+  const modeLabel = routingMode === 'live' ? 'Live traffic' : routingMode === 'demo' ? 'Demo mode' : routingMode === 'offline' ? 'Backend offline' : 'Connecting'
+  const modeDetail = routingMode === 'live'
+    ? 'TomTom traffic data connected'
+    : routingMode === 'demo'
+      ? 'Synthetic routes — safe for interface testing'
+      : routingMode === 'offline'
+        ? 'Route API is currently unreachable'
+        : 'Checking routing and vehicle services'
 
   return (
-    <main>
+    <main className="site-shell">
+      <div className="ambient-glow ambient-glow-one" aria-hidden="true" />
+      <div className="ambient-glow ambient-glow-two" aria-hidden="true" />
+
       <nav className="topbar">
-        <a className="brand" href="#top" aria-label="GreenRoute home"><span className="brand-mark">G</span>GreenRoute</a>
-        <div className="nav-links"><a href="#planner">Route Lab</a><a href="#intelligence">Intelligence</a><a href="#history">History</a><span className="status-pill">{modeLabel}</span><button className="account-btn" type="button" onClick={() => setAuthOpen((current) => !current)}>{session ? '● Synced' : 'Sign in'}</button></div>
+        <a className="brand" href="#top" aria-label="GreenRoute home">
+          <span className="brand-mark">G</span>
+          <span>Green<span>Route</span></span>
+        </a>
+        <div className="nav-links">
+          <a href="#planner">Route planner</a>
+          <a href="#intelligence">Decision insights</a>
+          <a href="#history">Saved trips</a>
+        </div>
+        <div className="nav-actions">
+          <span className={`status-pill ${routingMode}`}><i />{modeLabel}</span>
+          <button className="account-btn" type="button" onClick={() => setAuthOpen((current) => !current)}>{session ? 'Synced account' : 'Sign in'}</button>
+        </div>
         {authOpen && <AuthPanel session={session} onClose={() => setAuthOpen(false)} />}
       </nav>
 
-      <section className="hero" id="top"><div className="hero-copy"><div className="eyebrow">MULTI-OBJECTIVE LOGISTICS INTELLIGENCE</div><h1>Choose the route that matches <em>what matters now.</em></h1><p>GreenRoute blends live traffic, exact shipment locations, real vehicle identity, fuel economics and carbon analytics to surface the fastest, balanced and greenest shipment paths.</p><div className="hero-actions"><a className="primary-btn" href="#planner">Plan a route ↘</a><span className="live-chip"><i /> Interactive logistics intelligence</span></div><div className="hero-stats"><div><b>3</b><span>route strategies</span></div><div><b>POI</b><span>coordinate-level search</span></div><div><b>CO₂</b><span>vehicle-aware analytics</span></div></div></div><HeroScene /></section>
+      <section className="hero" id="top">
+        <div className="hero-copy">
+          <div className="hero-badge"><i /> Decision intelligence for Indian logistics</div>
+          <h1>Smarter routes.<em> Cleaner deliveries.</em></h1>
+          <p>Compare real road options by time, operating cost and carbon—then choose the route that fits today’s shipment.</p>
+          <div className="hero-actions">
+            <a className="primary-btn" href="#planner">Plan a route <span>→</span></a>
+            <a className="secondary-btn" href="#intelligence">See how routes are scored</a>
+          </div>
+          <div className="hero-assurances" aria-label="GreenRoute capabilities">
+            <span><b>✓</b> Exact pickup points</span>
+            <span><b>✓</b> Vehicle-aware estimates</span>
+            <span><b>✓</b> Transparent trade-offs</span>
+          </div>
+        </div>
+        <div className="hero-stage">
+          <HeroScene />
+          <div className="hero-float hero-float-route"><small>RECOMMENDATION ENGINE</small><strong>3 strategies</strong><span>Fastest · Balanced · Greenest</span></div>
+          <div className="hero-float hero-float-carbon"><small>MEASURED FOR EACH ROAD</small><strong>Time · ₹ · CO₂</strong><span>No hidden weighting</span></div>
+        </div>
+      </section>
 
       <section className="planner-section" id="planner">
-        <div className="section-heading"><div><span>ROUTE LAB</span><h2>Turn shipment constraints into transparent choices.</h2></div><p>{message}</p></div>
+        <div className="section-heading planner-heading">
+          <div><span>ROUTE PLANNER</span><h2>One shipment. Three honest choices.</h2></div>
+          <p>Set the real pickup, delivery, load and vehicle. GreenRoute compares the available roads without inventing alternatives.</p>
+        </div>
+
+        <div className={`planner-status ${routingMode}`} role="status">
+          <span className="planner-status-icon"><i /></span>
+          <div><strong>{modeLabel}</strong><small>{modeDetail}</small></div>
+          <p>{message}</p>
+        </div>
+
         <div className="planner-grid v2-grid">
           <form className="planner-form glass-panel v2-form" onSubmit={submit}>
-            <div className="form-title"><span>01</span><div><h3>Shipment & fleet details</h3><p>Select exact places and the actual vehicle used for this trip.</p></div></div>
+            <div className="form-title"><span>01</span><div><h3>Build the shipment</h3><p>Use exact suggestions or pin either point on the map.</p></div></div>
 
-            <LocationSearch label="From — exact pickup point" text={form.origin_text} selected={form.origin_place} onTextChange={(value) => changeLocationText('origin', value)} onSelect={(place) => selectLocation('origin', place)} placeholder="Search school, warehouse, street, address or pincode…" />
-            <LocationSearch label="To — exact delivery point" text={form.destination_text} selected={form.destination_place} onTextChange={(value) => changeLocationText('destination', value)} onSelect={(place) => selectLocation('destination', place)} placeholder="Search college, factory, street, address or pincode…" />
+            <div className="form-group route-point-group">
+              <div className="form-group-label"><span>Route points</span><small>Required</small></div>
+              <LocationSearch label="Pickup location" text={form.origin_text} selected={form.origin_place} onTextChange={(value) => changeLocationText('origin', value)} onSelect={(place) => selectLocation('origin', place)} placeholder="Search warehouse, street, business or pincode…" />
+              <div className="route-point-line" aria-hidden="true" />
+              <LocationSearch label="Delivery location" text={form.destination_text} selected={form.destination_place} onTextChange={(value) => changeLocationText('destination', value)} onSelect={(place) => selectLocation('destination', place)} placeholder="Search destination, landmark or pincode…" />
+            </div>
 
-            <div className="two-col">
-              <label>Shipment load (kg)<input type="number" min="1" step="1" name="load_kg" value={form.load_kg} onChange={change} placeholder="e.g. 500" required /></label>
-              {form.vehicle.fuel_type === 'electric'
-                ? <label>Electricity price (₹/kWh)<input type="number" min="0.01" step="0.01" name="electricity_price_per_kwh" value={form.electricity_price_per_kwh} onChange={change} placeholder="e.g. 8.00" required /></label>
-                : <label>Fuel price (₹/{gaseousFuel ? 'kg' : 'L'})<input type="number" min="0.01" step="0.01" name="fuel_price_per_litre" value={form.fuel_price_per_litre} onChange={change} placeholder={gaseousFuel ? 'e.g. 86.00' : 'e.g. 92.50'} required /></label>}
+            <div className="form-group shipment-group">
+              <div className="form-group-label"><span>Shipment economics</span><small>Actual values</small></div>
+              <div className="two-col">
+                <label>Shipment load (kg)<input type="number" min="1" step="1" name="load_kg" value={form.load_kg} onChange={change} placeholder="e.g. 500" required /></label>
+                {form.vehicle.fuel_type === 'electric'
+                  ? <label>Electricity price (₹/kWh)<input type="number" min="0.01" step="0.01" name="electricity_price_per_kwh" value={form.electricity_price_per_kwh} onChange={change} placeholder="e.g. 8.00" required /></label>
+                  : <label>Fuel price (₹/{gaseousFuel ? 'kg' : 'L'})<input type="number" min="0.01" step="0.01" name="fuel_price_per_litre" value={form.fuel_price_per_litre} onChange={change} placeholder={gaseousFuel ? 'e.g. 86.00' : 'e.g. 92.50'} required /></label>}
+              </div>
             </div>
 
             <VehicleSelector catalog={vehicleCatalog} vehicle={form.vehicle} onChange={changeVehicle} />
 
             <div className={`load-meter ${loadInvalid ? 'over' : ''}`}><div><span>Payload utilisation</span><b>{Math.round(loadRatio)}%</b></div><div className="load-track"><i style={{ width: `${Math.min(100, loadRatio)}%` }} /></div><small>{loadValue.toLocaleString('en-IN')} / {Number(selectedVehicle.max_payload_kg || 0).toLocaleString('en-IN')} kg rated payload</small></div>
             <div className="departure-block"><span>Departure</span><div className="departure-toggle"><label className={form.departure_mode === 'now' ? 'active' : ''}><input type="radio" name="departure_mode" value="now" checked={form.departure_mode === 'now'} onChange={change} />Now</label><label className={form.departure_mode === 'scheduled' ? 'active' : ''}><input type="radio" name="departure_mode" value="scheduled" checked={form.departure_mode === 'scheduled'} onChange={change} />Schedule</label></div>{form.departure_mode === 'scheduled' && <input type="datetime-local" name="scheduled_departure" value={form.scheduled_departure} onChange={change} required />}</div>
-            <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete || numericIncomplete} type="submit">{loading ? 'Optimizing…' : 'Optimize exact route'}<span>→</span></button>
+            <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete || numericIncomplete} type="submit"><span>{loading ? 'Comparing roads…' : 'Compare route strategies'}</span><b>→</b></button>
             {placesIncomplete && <p className="form-warning">Choose a suggestion or pin both locations directly on the map.</p>}
             {loadInvalid && <p className="form-warning">Shipment exceeds the vehicle's entered rated payload.</p>}
           </form>
 
           <div className="map-panel glass-panel map-panel-v3">
-            <div className="map-topline"><div><span className="pulse-dot" /> Interactive route map</div><span>Search · pin · zoom · compare roads</span></div>
+            <div className="map-topline"><div><span className="pulse-dot" /> Live decision map</div><span>Pin · zoom · compare roads</span></div>
             <RouteMap routes={mapRoutes.length ? mapRoutes : routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={form.origin_place || lastOptimization?.origin} destination={form.destination_place || lastOptimization?.destination} onPickPlace={selectLocation} />
-            {selectedRoute && <div className="map-float-card"><small>Selected strategy</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
+            {!selectedRoute && <div className="map-empty-card"><span>01</span><div><strong>Your routes will appear here</strong><small>Select both locations and enter the shipment details to begin.</small></div></div>}
+            {selectedRoute && <div className={`map-float-card ${selectedRoute.kind}`}><small>SELECTED STRATEGY</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · ₹{Math.round(selectedRoute.fuel_cost).toLocaleString('en-IN')} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
           </div>
         </div>
 
+        {routes.length > 0 && fastestRoute && <div className="route-results-heading"><div><span>ROUTE COMPARISON</span><h3>Choose what matters for this delivery</h3></div><small>Select a card to highlight its physical road.</small></div>}
         {routes.length > 0 && fastestRoute && <div className="route-cards">{routes.map((route) => <RouteCard key={route.kind} route={route} fastestRoute={fastestRoute} active={selectedKind === route.kind} onClick={() => setSelectedKind(route.kind)} />)}</div>}
-        {routes.length > 0 && distinctStrategyRoads < 3 && <div className="strategy-overlap-note"><b>{distinctStrategyRoads === 1 ? 'One physical road wins multiple objectives.' : 'Two strategy labels share a physical road.'}</b> GreenRoute will not invent a worse route just to make three cards look different. The map still shows other distinct TomTom road candidates in grey so you can compare the actual roads available.</div>}
+        {routes.length > 0 && distinctStrategyRoads < 3 && <div className="strategy-overlap-note"><b>{distinctStrategyRoads === 1 ? 'One physical road wins multiple objectives.' : 'Two strategy labels share a physical road.'}</b> GreenRoute will not invent a worse route just to make three cards look different. Other genuine road candidates remain visible in grey.</div>}
         {selectedRoute && fastestRoute && <div id="intelligence"><RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} /></div>}
-        <div className="save-trip-bar glass-panel"><div><span>CLOUD TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Optimize a real trip to enable saving'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Add the Supabase publishable key to enable cloud sync.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save Trip ↗' : 'Sign in to save'}</button></div>
+        <div className="save-trip-bar glass-panel"><div><span>TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Your chosen route can be saved here'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Cloud sync is not configured yet.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save trip' : 'Sign in to save'}<span>↗</span></button></div>
       </section>
 
-      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every route explains its trade-off.</h2><p>GreenRoute estimates energy from the actual vehicle profile and keeps Bharat Stage classification separate from fuel CO₂ accounting, so older vehicles are not assigned fake chemistry factors.</p>{selectedSavings && selectedKind !== 'fastest' && selectedRoute && <p className="impact-saving">Choose {selectedRoute.label} and you currently trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg CO₂</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
+      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every recommendation explains its trade-off.</h2><p>Energy use is estimated from the selected vehicle and shipment load. Bharat Stage remains a vehicle classification—not a substitute for actual fuel-based CO₂ calculation.</p>{selectedSavings && selectedKind !== 'fastest' && selectedRoute && <p className="impact-saving">Choose {selectedRoute.label} and trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg CO₂</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
 
       <HistoryDashboard session={session} dashboard={dashboard} trips={trips} loading={historyLoading} onRefresh={() => loadCloudData(session)} onDelete={deleteTrip} />
-      <footer><div><span className="brand-mark small">G</span><b>GreenRoute</b></div><p>Indian road logistics · exact POI routing · vehicle-aware carbon analytics · Supabase-backed history</p></footer>
+      <footer><div><span className="brand-mark small">G</span><b>GreenRoute</b></div><p>Indian road logistics · exact location routing · vehicle-aware carbon analytics</p></footer>
     </main>
   )
 }
