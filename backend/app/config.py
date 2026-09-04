@@ -8,6 +8,7 @@ DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Ttm03drKHFCUZWQkkv6cFA_lqlJHp
 
 class Settings(BaseSettings):
     tomtom_api_key: str = ""
+    graphhopper_api_key: str = ""
     cors_origins: str = "http://localhost:5173"
     demo_fallback_enabled: bool = True
     supabase_url: str = DEFAULT_SUPABASE_URL
