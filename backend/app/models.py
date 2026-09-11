@@ -39,7 +39,7 @@ class VehicleInput(BaseModel):
 class RouteOptimizationRequest(BaseModel):
     origin: str | PlaceInput
     destination: str | PlaceInput
-    load_kg: float = Field(gt=0, le=50000)
+    load_kg: float = Field(ge=0, le=50000)
     vehicle_type: str | None = None  # legacy compatibility
     vehicle: VehicleInput | None = None
     # L for diesel/petrol, kg for CNG/LNG. Kept under the legacy field name for API compatibility.
@@ -59,3 +59,18 @@ class VrpRequest(BaseModel):
     demands: list[int]
     vehicle_capacities: list[int]
     depot: int = 0
+
+
+class DeliveryStop(BaseModel):
+    place: PlaceInput
+    weight_kg: float = Field(gt=0, le=50000, allow_inf_nan=False)
+
+
+class MultiStopRequest(BaseModel):
+    depot: PlaceInput
+    stops: list[DeliveryStop] = Field(min_length=1, max_length=12)
+    return_to_depot: bool = False
+    vehicle_type: str = 'lcv'
+    vehicle: VehicleInput | None = None
+    fuel_price_per_litre: float = Field(default=92.5, gt=0, le=500)
+    electricity_price_per_kwh: float = Field(default=8, gt=0, le=100)

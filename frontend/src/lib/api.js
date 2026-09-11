@@ -79,3 +79,9 @@ export async function getHealth() {
   const response = await fetch(`${API_BASE_URL}/health`)
   return parseResponse(response, 'GreenRoute backend is unavailable')
 }
+
+export async function planMultiStop(payload) {
+  return parseResponse(await fetch(`${API_BASE_URL}/api/routes/multi-stop`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }), 'Unable to plan deliveries')
+}

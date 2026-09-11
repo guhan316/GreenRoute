@@ -1,3 +1,4 @@
+import MultiStopPlanner from './components/MultiStopPlanner.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AuthPanel from './components/AuthPanel.jsx'
 import HeroScene from './components/HeroScene.jsx'
@@ -304,6 +305,7 @@ export default function App() {
         </a>
         <div className="nav-links">
           <a href="#planner">Route planner</a>
+          <a href="#multi-stop">Multi-stop planner</a>
           <a href="#intelligence">Decision insights</a>
           <a href="#history">Saved trips</a>
         </div>
@@ -335,6 +337,8 @@ export default function App() {
           <div className="hero-float hero-float-carbon"><small>MEASURED FOR EACH ROAD</small><strong>Time · ₹ · CO₂</strong><span>No hidden weighting</span></div>
         </div>
       </section>
+
+      <MultiStopPlanner />
 
       <section className="planner-section" id="planner">
         <div className="section-heading planner-heading">
