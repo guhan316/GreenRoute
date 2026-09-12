@@ -1,4 +1,6 @@
 """Compose road legs in the manager's chosen delivery order."""
+import asyncio
+
 from ..models import RouteOptimizationRequest
 from .carbon import build_vehicle_profile, get_vehicle_profile
 
@@ -11,19 +13,33 @@ async def plan_multi_stop(request, optimize_leg):
     places = [request.depot] + [stop.place for stop in request.stops]
     if request.return_to_depot:
         places.append(request.depot)
-    legs = []
+    # Validate the entire itinerary before spending provider requests.
+    requests = []
     for index, (origin, destination) in enumerate(zip(places, places[1:])):
         if origin.lat == destination.lat and origin.lon == destination.lon:
             raise ValueError('Consecutive stops must have different coordinates')
-        result = await optimize_leg(RouteOptimizationRequest(
+        requests.append(RouteOptimizationRequest(
             origin=origin, destination=destination, load_kg=remaining,
             vehicle=request.vehicle, vehicle_type=request.vehicle_type,
             fuel_price_per_litre=request.fuel_price_per_litre,
             electricity_price_per_kwh=request.electricity_price_per_kwh,
         ))
-        legs.append(result)
         if index < len(request.stops):
             remaining = max(0, remaining - request.stops[index].weight_kg)
+    # Bound provider concurrency and finish before Vercel's 60-second deadline.
+    semaphore = asyncio.Semaphore(3)
+    async def calculate(leg):
+        async with semaphore:
+            return await optimize_leg(leg)
+    tasks = [asyncio.create_task(calculate(leg)) for leg in requests]
+    try:
+        async with asyncio.timeout(45):
+            legs = await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
     totals = {}
     for kind in ('fastest', 'balanced', 'greenest'):
         selected = [leg['recommendations'][kind] for leg in legs]

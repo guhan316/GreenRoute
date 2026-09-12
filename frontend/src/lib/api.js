@@ -3,7 +3,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 async function parseResponse(response, fallback) {
   if (response.ok) return response.json()
   const detail = await response.json().catch(() => ({}))
-  throw new Error(detail.detail || fallback)
+  const message = Array.isArray(detail.detail)
+    ? detail.detail.map(error => `${error.loc?.slice(1).join('.') || 'Input'}: ${error.msg}`).join('; ')
+    : detail.detail
+  throw new Error(message || fallback)
 }
 
 function authHeaders(accessToken) {

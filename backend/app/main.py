@@ -22,7 +22,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.7.0')
+app = FastAPI(title='GreenRoute API', version='0.8.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -70,7 +70,7 @@ def health():
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.7.0',
+        'version': '0.8.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
         'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),
@@ -302,5 +302,7 @@ async def multi_stop(request: MultiStopRequest):
     from .services.multistop import plan_multi_stop
     try:
         return await plan_multi_stop(request, optimize_routes)
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail='Routing took too long. Try fewer stops or retry shortly.') from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

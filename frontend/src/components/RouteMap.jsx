@@ -64,7 +64,9 @@ function safePopup(kind, place, fallback) {
   return wrapper
 }
 
-export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace, stops = [] }) {
+const EMPTY_STOPS = []
+
+export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace, stops = EMPTY_STOPS }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const routeLayerRef = useRef(null)

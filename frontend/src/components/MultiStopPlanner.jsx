@@ -43,12 +43,12 @@ export default function MultiStopPlanner() {
           <LocationSearch label="Depot / pickup" text={depot.text} selected={depot.place} onTextChange={text => change(() => setDepot({ text, place: null }))} onSelect={place => change(() => setDepot({ text: place.label, place }))} placeholder="Choose your warehouse" />
           <ol className="delivery-stops">{stops.map((stop, index) => <li key={stop.id}>
             <LocationSearch label={`Delivery ${index + 1}`} text={stop.text} selected={stop.place} onTextChange={text => update(stop.id, { text, place: null })} onSelect={place => update(stop.id, { text: place.label, place })} placeholder="Search delivery location" />
-            <label>Delivery weight (kg)<input type="number" min="0.1" max="3500" step="0.1" value={stop.weight} onChange={e => update(stop.id, { weight: e.target.value })} required /></label>
+            <label>Delivery weight (kg)<input type="number" min="0.1" max="4000" step="0.1" value={stop.weight} onChange={e => update(stop.id, { weight: e.target.value })} required /></label>
             <div className="stop-actions"><button type="button" disabled={index === 0} aria-label={`Move delivery ${index + 1} up`} onClick={() => move(index, -1)}>↑ Up</button><button type="button" disabled={index === stops.length - 1} aria-label={`Move delivery ${index + 1} down`} onClick={() => move(index, 1)}>↓ Down</button><button type="button" disabled={stops.length === 1} onClick={() => change(() => setStops(stops.filter(s => s.id !== stop.id)))}>Remove</button></div>
           </li>)}</ol>
           <button type="button" disabled={stops.length >= 12} onClick={() => change(() => setStops([...stops, blank()]))}>+ Add delivery ({stops.length}/12)</button>
           <label className="return-checkbox"><input type="checkbox" checked={roundTrip} onChange={e => change(() => setRoundTrip(e.target.checked))} /> Return to depot</label>
-          <p>Light commercial vehicle · {total.toLocaleString()} kg loaded. Capacity is checked before routing. Load reduces after each delivery.</p>
+          <p>Light commercial vehicle · {total.toLocaleString()} / 4,000 kg loaded. Capacity is checked before routing. Load reduces after each delivery.</p>
           <button className="primary-btn" disabled={!depot.place || stops.some(s => !s.place || Number(s.weight) <= 0)}>{busy ? 'Calculating every leg…' : 'Compare delivery routes'}</button>
         </fieldset>
         {error && <p role="alert">{error}</p>}
