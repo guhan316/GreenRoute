@@ -64,7 +64,9 @@ function safePopup(kind, place, fallback) {
   return wrapper
 }
 
-export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace }) {
+const EMPTY_STOPS = []
+
+export default function RouteMap({ routes, selectedKind, onSelectKind, origin, destination, onPickPlace, stops = EMPTY_STOPS }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const routeLayerRef = useRef(null)
@@ -80,17 +82,17 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
   const [picking, setPicking] = useState(false)
   const [mapError, setMapError] = useState('')
 
-  stateRef.current = { routes: routes || [], selectedKind, origin, destination }
+  stateRef.current = { routes: routes || [], selectedKind, origin, destination, stops }
   pickModeRef.current = pickMode
   pickingRef.current = picking
   onPickPlaceRef.current = onPickPlace
   onSelectKindRef.current = onSelectKind
 
-  function markerIcon(kind) {
+  function markerIcon(kind, number) {
     const L = window.L
     return L.divIcon({
       className: 'leaflet-greenroute-marker-wrap',
-      html: `<div class="route-endpoint-marker ${kind}"><span>${kind === 'origin' ? 'A' : 'B'}</span></div>`,
+      html: `<div class="route-endpoint-marker ${kind}"><span>${number ?? (kind === 'origin' ? 'A' : 'B')}</span></div>`,
       iconSize: [34, 42],
       iconAnchor: [17, 42],
       popupAnchor: [0, -42],
@@ -103,16 +105,17 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     if (!L || !layer) return
     layer.clearLayers()
 
-    const add = (place, kind, fallback) => {
+    const add = (place, kind, fallback, number) => {
       const latLng = endpointLatLng(place)
       if (!latLng) return
-      L.marker(latLng, { icon: markerIcon(kind), keyboard: true, riseOnHover: true })
+      L.marker(latLng, { icon: markerIcon(kind, number), keyboard: true, riseOnHover: true })
         .bindPopup(safePopup(kind, place, fallback))
         .addTo(layer)
     }
 
     add(stateRef.current.origin, 'origin', 'Pickup')
     add(stateRef.current.destination, 'destination', 'Delivery')
+    stateRef.current.stops.forEach((place, index) => add(place, 'destination', `Stop ${index + 1}`, index + 1))
   }
 
   function renderRoutes() {
@@ -196,7 +199,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
 
     const routePoints = (stateRef.current.routes || []).flatMap((route) => toLeafletPoints(route.coordinates))
     const endpoints = [endpointLatLng(stateRef.current.origin), endpointLatLng(stateRef.current.destination)].filter(Boolean)
-    const allPoints = [...routePoints, ...endpoints]
+    const allPoints = [...routePoints, ...endpoints, ...stateRef.current.stops.map(endpointLatLng).filter(Boolean)]
     if (!allPoints.length) return
 
     const signature = `${allPoints[0].join(',')}|${allPoints[allPoints.length - 1].join(',')}|${routePoints.length}`
@@ -304,7 +307,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     }
   }, [])
 
-  useEffect(() => { syncAll({ refit: true }) }, [routes, origin, destination])
+  useEffect(() => { syncAll({ refit: true }) }, [routes, origin, destination, stops])
   useEffect(() => { syncAll() }, [selectedKind])
   useEffect(() => {
     const container = mapRef.current?.getContainer()
@@ -338,7 +341,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
         </div>
       )}
 
-      {!mapError && (
+      {!mapError && onPickPlace && (
         <div className="gr-map-pin-controls" role="group" aria-label="Choose locations directly on the map">
           <button
             type="button"

@@ -3,7 +3,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 async function parseResponse(response, fallback) {
   if (response.ok) return response.json()
   const detail = await response.json().catch(() => ({}))
-  throw new Error(detail.detail || fallback)
+  const message = Array.isArray(detail.detail)
+    ? detail.detail.map(error => `${error.loc?.slice(1).join('.') || 'Input'}: ${error.msg}`).join('; ')
+    : detail.detail
+  throw new Error(message || fallback)
 }
 
 function authHeaders(accessToken) {
@@ -78,4 +81,10 @@ export async function getVehicles() {
 export async function getHealth() {
   const response = await fetch(`${API_BASE_URL}/health`)
   return parseResponse(response, 'GreenRoute backend is unavailable')
+}
+
+export async function planMultiStop(payload) {
+  return parseResponse(await fetch(`${API_BASE_URL}/api/routes/multi-stop`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }), 'Unable to plan deliveries')
 }

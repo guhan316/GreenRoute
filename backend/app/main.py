@@ -4,7 +4,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .models import OptimizationSaveRequest, RouteOptimizationRequest, VrpRequest
+from .models import MultiStopRequest, OptimizationSaveRequest, RouteOptimizationRequest, VrpRequest
 from .services.carbon import (
     build_vehicle_profile,
     estimate_trip_metrics,
@@ -22,7 +22,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.7.0')
+app = FastAPI(title='GreenRoute API', version='0.8.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -70,7 +70,7 @@ def health():
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.7.0',
+        'version': '0.8.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
         'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),
@@ -189,8 +189,8 @@ async def optimize_routes(request: RouteOptimizationRequest):
             mode = 'demo'
             origin_text = request.origin.label if hasattr(request.origin, 'label') else str(request.origin)
             destination_text = request.destination.label if hasattr(request.destination, 'label') else str(request.destination)
-            origin = geocode_demo(origin_text)
-            destination = geocode_demo(destination_text)
+            origin = request.origin.model_dump() if hasattr(request.origin, 'lat') else geocode_demo(origin_text)
+            destination = request.destination.model_dump() if hasattr(request.destination, 'lat') else geocode_demo(destination_text)
             candidates = calculate_demo_routes(origin, destination)
             notice = (
                 'Synthetic development routes are being shown. '
@@ -293,5 +293,16 @@ def solve_vrp(request: VrpRequest):
             request.vehicle_capacities,
             request.depot,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/routes/multi-stop')
+async def multi_stop(request: MultiStopRequest):
+    from .services.multistop import plan_multi_stop
+    try:
+        return await plan_multi_stop(request, optimize_routes)
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail='Routing took too long. Try fewer stops or retry shortly.') from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
