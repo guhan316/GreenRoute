@@ -1,3 +1,4 @@
+import Emissions from './Emissions.jsx'
 function formatNumber(value, digits = 0) {
   return Number(value || 0).toLocaleString('en-IN', {
     maximumFractionDigits: digits,
@@ -27,7 +28,7 @@ export default function HistoryDashboard({ session, dashboard, trips, loading, o
     ['Trips saved', formatNumber(dashboard?.trip_count)],
     ['Distance', `${formatNumber(dashboard?.distance_km, 1)} km`],
     ['Fuel used', `${formatNumber(dashboard?.fuel_litres, 1)} L`],
-    ['CO₂ tracked', `${formatNumber(dashboard?.co2_kg, 1)} kg`],
+    ['Estimated CO₂ tracked', `${formatNumber(dashboard?.co2_kg, 1)} kg`],
     ['CO₂ avoided', `${formatNumber(dashboard?.co2_saved_kg, 1)} kg`],
     ['Fuel cost saved', `₹${formatNumber(dashboard?.fuel_cost_saved)}`],
   ]
@@ -39,7 +40,7 @@ export default function HistoryDashboard({ session, dashboard, trips, loading, o
         <button type="button" className="secondary-btn" onClick={onRefresh} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh data'}</button>
       </div>
 
-      <div className="dashboard-stats">
+      <p>CO₂ totals combine combustion tailpipe emissions and EV charging electricity estimates. These are not lifecycle totals.</p><div className="dashboard-stats">
         {stats.map(([label, value]) => <div className="dashboard-stat glass-panel" key={label}><small>{label}</small><strong>{value}</strong></div>)}
       </div>
 
@@ -63,7 +64,7 @@ export default function HistoryDashboard({ session, dashboard, trips, loading, o
                 <div><small>Strategy</small><b>{trip.selected_strategy || '—'}</b></div>
                 <div><small>Distance</small><b>{selected ? `${formatNumber(selected.distance_km, 1)} km` : '—'}</b></div>
                 <div><small>Fuel</small><b>{selected ? `${formatNumber(selected.fuel_litres, 1)} L` : '—'}</b></div>
-                <div><small>CO₂</small><b>{selected ? `${formatNumber(selected.co2_kg, 1)} kg` : '—'}</b></div>
+                {selected ? <Emissions route={selected} fuelType={trip.fuel_type} /> : <div>CO₂: —</div>}
               </div>
             </article>
           )

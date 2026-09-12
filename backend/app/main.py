@@ -22,7 +22,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.8.0')
+app = FastAPI(title='GreenRoute API', version='0.8.1')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,

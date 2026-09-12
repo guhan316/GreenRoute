@@ -1,8 +1,24 @@
 from __future__ import annotations
 
 from typing import Any
+import json
+from pathlib import Path
+import logging
 
 import httpx
+
+
+def bundled_catalog() -> list[dict[str, Any]]:
+    return json.loads((Path(__file__).resolve().parents[1] / 'data' / 'vehicle_catalog.json').read_text())
+
+
+def merge_catalog(remote, bundled):
+    key = lambda row: (row['manufacturer'].strip().casefold(), row['model'].strip().casefold())
+    merged = {key(row): row for row in remote}
+    for row in bundled:
+        previous = merged.get(key(row), {})
+        merged[key(row)] = {**row, 'id': previous.get('id', row['id'])}
+    return sorted(merged.values(), key=lambda row: key(row))
 
 
 class VehicleCatalogService:
@@ -23,17 +39,19 @@ class VehicleCatalogService:
 
     async def list_catalog(self) -> list[dict[str, Any]]:
         if not self.configured:
-            return []
+            return bundled_catalog()
         params = {
             'select': 'id,manufacturer,model,category,fuel_types,payload_min_kg,payload_max_kg,production_start_year,production_end_year,is_current,source_url,source_note',
             'is_current': 'eq.true',
             'order': 'manufacturer.asc,model.asc',
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f'{self.url}/rest/v1/vehicle_catalog',
-                headers=self._headers(),
-                params=params,
-            )
-        response.raise_for_status()
-        return response.json()
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f'{self.url}/rest/v1/vehicle_catalog', headers=self._headers(), params=params,
+                )
+            response.raise_for_status()
+            return merge_catalog(response.json(), bundled_catalog())
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            logging.getLogger(__name__).warning('Remote vehicle catalogue unavailable; using bundled OEM catalogue')
+            return bundled_catalog()

@@ -49,3 +49,19 @@ class MultiStopTests(unittest.TestCase):
             response = self.client.post('/api/routes/multi-stop', json=self.payload)
             routing.assert_not_awaited()
         self.assertEqual(response.status_code, 400)
+
+    @patch('app.main.settings')
+    def test_ev_multistop_keeps_zero_tailpipe(self, settings):
+        settings.graphhopper_api_key = ''; settings.tomtom_api_key = ''; settings.demo_fallback_enabled = True
+        self.payload['vehicle'] = dict(manufacturer='Test', model='EV', manufacture_year=2025,
+            fuel_type='electric', max_payload_kg=500, kerb_weight_kg=1000,
+            energy_consumption_kwh_per_km=0.2, max_speed_kmph=50)
+        response = self.client.post('/api/routes/multi-stop', json=self.payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        for route in response.json()['routes']:
+            self.assertEqual(route['fuel_type'], 'electric')
+            self.assertEqual(route['tailpipe_co2_kg'], 0)
+            self.assertGreater(route['electricity_co2_kg'], 0)
+            self.assertEqual(route['co2_kg'], route['electricity_co2_kg'])
+        self.payload['vehicle']['max_payload_kg'] = 200
+        self.assertEqual(self.client.post('/api/routes/multi-stop', json=self.payload).status_code, 400)
