@@ -53,6 +53,7 @@ export default function MultiStopPlanner({ vehicle }) {
           <label className="return-checkbox"><input type="checkbox" checked={roundTrip} onChange={e => change(() => setRoundTrip(e.target.checked))} /> Return to depot</label>
           <label className="return-checkbox"><input type="checkbox" checked={useSelectedVehicle} onChange={e => change(() => setUseSelectedVehicle(e.target.checked))} /> Use vehicle configured in Route Planner below</label>
           <p>{useSelectedVehicle ? `${vehicle.manufacturer} ${vehicle.model} · ${vehicle.fuel_type}` : 'Light commercial vehicle (diesel)'} · {total.toLocaleString()} / {useSelectedVehicle ? vehicle.max_payload_kg : '4,000'} kg loaded. Capacity is checked before routing. Load reduces after each delivery.</p>
+          {useSelectedVehicle && vehicle.fuel_type === 'electric' && <p>EV estimates exclude charging stops. Confirm battery range and charging access before dispatch.</p>}
           <button className="primary-btn" disabled={!depot.place || stops.some(s => !s.place || Number(s.weight) <= 0)}>{busy ? 'Calculating every leg…' : 'Compare delivery routes'}</button>
         </fieldset>
         {error && <p role="alert">{error}</p>}
