@@ -1,3 +1,4 @@
+import Emissions, { emissionsLabel } from './components/Emissions.jsx'
 import MultiStopPlanner from './components/MultiStopPlanner.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AuthPanel from './components/AuthPanel.jsx'
@@ -83,7 +84,7 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
   return (
     <button className={`route-card ${active ? 'active' : ''} ${route.kind}`} onClick={onClick} type="button">
       <div className="route-card-head"><span className="route-icon">{icon}</span><div><strong>{route.label}</strong><small>{route.distance_km.toFixed(1)} km{sourceType ? ` · ${sourceType}` : ''}{sharedCount ? ' · SHARED ROAD' : ''}</small></div><span className="route-select-indicator">{active ? 'VIEWING' : 'EXPLORE'}</span></div>
-      <div className="route-card-grid"><div><small>ETA</small><b>{formatDuration(route.duration_minutes)}</b></div><div><small>Energy</small><b>{Number(energyQuantity).toFixed(1)} {energyUnit}</b></div><div><small>Cost</small><b>₹{Math.round(route.fuel_cost).toLocaleString('en-IN')}</b></div><div><small>CO₂</small><b>{route.co2_kg.toFixed(1)} kg</b></div></div>
+      <div className="route-card-grid"><div><small>ETA</small><b>{formatDuration(route.duration_minutes)}</b></div><div><small>Energy</small><b>{Number(energyQuantity).toFixed(1)} {energyUnit}</b></div><div><small>Cost</small><b>₹{Math.round(route.fuel_cost).toLocaleString('en-IN')}</b></div><Emissions route={route} /></div>
       <div className="route-meta"><span>Traffic delay {Math.round(route.traffic_delay_minutes || 0)} min</span>{route.kind !== 'fastest' && <span className="route-saving-mini">{Math.max(0, tradeoff.co2_saved_kg_vs_fastest).toFixed(1)} kg CO₂ saved</span>}</div>
     </button>
   )
@@ -239,7 +240,7 @@ export default function App() {
       const departureTime = form.departure_mode === 'scheduled' && form.scheduled_departure ? `${form.scheduled_departure}:00+05:30` : 'now'
       const vehicle = {
         ...form.vehicle,
-        emission_stage: form.vehicle.emission_stage || inferStage(form.vehicle.manufacture_year),
+        emission_stage: form.vehicle.fuel_type === 'electric' ? 'Not applicable (EV)' : (form.vehicle.emission_stage || inferStage(form.vehicle.manufacture_year)),
       }
       const requestPayload = {
         origin: form.origin_place || form.origin_text,
@@ -338,7 +339,7 @@ export default function App() {
         </div>
       </section>
 
-      <MultiStopPlanner />
+      <MultiStopPlanner vehicle={form.vehicle} />
 
       <section className="planner-section" id="planner">
         <div className="section-heading planner-heading">
@@ -386,7 +387,7 @@ export default function App() {
             <div className="map-topline"><div><span className="pulse-dot" /> Live decision map</div><span>Pin · zoom · compare roads</span></div>
             <RouteMap routes={mapRoutes.length ? mapRoutes : routes} selectedKind={selectedKind} onSelectKind={setSelectedKind} origin={form.origin_place || lastOptimization?.origin} destination={form.destination_place || lastOptimization?.destination} onPickPlace={selectLocation} />
             {!selectedRoute && <div className="map-empty-card"><span>01</span><div><strong>Your routes will appear here</strong><small>Select both locations and enter the shipment details to begin.</small></div></div>}
-            {selectedRoute && <div className={`map-float-card ${selectedRoute.kind}`}><small>SELECTED STRATEGY</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · ₹{Math.round(selectedRoute.fuel_cost).toLocaleString('en-IN')} · {selectedRoute.co2_kg.toFixed(1)} kg CO₂</span></div>}
+            {selectedRoute && <div className={`map-float-card ${selectedRoute.kind}`}><small>SELECTED STRATEGY</small><b>{selectedRoute.label}</b><span>{formatDuration(selectedRoute.duration_minutes)} · ₹{Math.round(selectedRoute.fuel_cost).toLocaleString('en-IN')} · {selectedRoute.co2_kg.toFixed(1)} kg {emissionsLabel(selectedRoute.fuel_type)}</span></div>}
           </div>
         </div>
 
@@ -397,7 +398,7 @@ export default function App() {
         <div className="save-trip-bar glass-panel"><div><span>TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Your chosen route can be saved here'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Cloud sync is not configured yet.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save trip' : 'Sign in to save'}<span>↗</span></button></div>
       </section>
 
-      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every recommendation explains its trade-off.</h2><p>Energy use is estimated from the selected vehicle and shipment load. Bharat Stage remains a vehicle classification—not a substitute for actual fuel-based CO₂ calculation.</p>{selectedSavings && selectedKind !== 'fastest' && selectedRoute && <p className="impact-saving">Choose {selectedRoute.label} and trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg CO₂</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
+      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every recommendation explains its trade-off.</h2><p>Energy use is estimated from the selected vehicle and shipment load. EVs have zero tailpipe CO₂. Charging CO₂ uses estimated electricity consumption × 0.716 kg/kWh (CEA FY 2022–23 baseline). Combustion vehicles show tailpipe CO₂. Comparisons exclude manufacturing, upstream fuel production and charging losses; they are not full lifecycle assessments.</p>{selectedSavings && selectedKind !== 'fastest' && selectedRoute && <p className="impact-saving">Choose {selectedRoute.label} and trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg {emissionsLabel(selectedRoute?.fuel_type)}</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
 
       <HistoryDashboard session={session} dashboard={dashboard} trips={trips} loading={historyLoading} onRefresh={() => loadCloudData(session)} onDelete={deleteTrip} />
       <footer><div><span className="brand-mark small">G</span><b>GreenRoute</b></div><p>Indian road logistics · exact location routing · vehicle-aware carbon analytics</p></footer>

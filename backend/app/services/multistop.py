@@ -45,6 +45,9 @@ async def plan_multi_stop(request, optimize_leg):
         selected = [leg['recommendations'][kind] for leg in legs]
         totals[kind] = {
             'kind': kind,
+            'fuel_type': selected[0].get('fuel_type'),
+            **{key: round(sum(route.get(key, 0) for route in selected), 2)
+               for key in ('tailpipe_co2_kg', 'electricity_co2_kg', 'energy_kwh')},
             **{key: round(sum(route[key] for route in selected), 2)
                for key in ('distance_km', 'duration_minutes', 'fuel_cost', 'co2_kg')},
             'coordinates': [point for route in selected for point in route['coordinates']],

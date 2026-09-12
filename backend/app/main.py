@@ -22,7 +22,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.8.0')
+app = FastAPI(title='GreenRoute API', version='0.8.1')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -70,7 +70,7 @@ def health():
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.8.0',
+        'version': '0.8.1',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
         'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),

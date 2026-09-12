@@ -66,7 +66,7 @@ def get_vehicle_profile(vehicle_type: str) -> VehicleProfile:
 def build_vehicle_profile(vehicle: Any) -> VehicleProfile:
     data = vehicle.model_dump() if hasattr(vehicle, 'model_dump') else dict(vehicle)
     year = int(data['manufacture_year'])
-    stage = data.get('emission_stage') or infer_bharat_stage(year)
+    stage = 'Not applicable (EV)' if data['fuel_type'] == 'electric' else (data.get('emission_stage') or infer_bharat_stage(year))
     manufacturer = data['manufacturer'].strip()
     model = data['model'].strip()
     return VehicleProfile(
@@ -102,7 +102,7 @@ def estimate_trip_metrics(route: dict, profile: VehicleProfile, load_kg: float, 
         'vehicle_manufacturer': profile.manufacturer,
         'vehicle_model': profile.model,
         'manufacture_year': profile.manufacture_year,
-        'emission_stage': profile.emission_stage,
+        'emission_stage': 'Not applicable (EV)' if profile.fuel_type == 'electric' else profile.emission_stage,
         'fuel_type': profile.fuel_type,
     }
 
@@ -122,6 +122,9 @@ def estimate_trip_metrics(route: dict, profile: VehicleProfile, load_kg: float, 
             'effective_efficiency': round(distance_km / max(quantity, 0.001), 2),
             'fuel_cost': round(cost, 2),
             'co2_kg': round(co2_kg, 2),
+            'tailpipe_co2_kg': 0.0,
+            'electricity_co2_kg': round(co2_kg, 2),
+            'grid_factor_kg_co2_per_kwh': INDIA_GRID_KG_CO2_PER_KWH,
             'emissions_basis': 'Electricity consumed × India grid factor (CEA FY 2022-23 baseline)',
         }
 
@@ -147,5 +150,7 @@ def estimate_trip_metrics(route: dict, profile: VehicleProfile, load_kg: float, 
         'effective_efficiency': round(efficiency, 2),
         'fuel_cost': round(cost, 2),
         'co2_kg': round(co2_kg, 2),
+        'tailpipe_co2_kg': round(co2_kg, 2),
+        'electricity_co2_kg': 0.0,
         'emissions_basis': f"Fuel consumed ({factor_info['unit']}) × {profile.fuel_type.upper()} direct CO2 factor; Bharat Stage tracked separately",
     }

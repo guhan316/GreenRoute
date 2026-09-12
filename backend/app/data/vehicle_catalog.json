@@ -1,0 +1,662 @@
+[
+  {
+    "id": "oem:mahindra-e-alfa-cargo",
+    "manufacturer": "Mahindra",
+    "model": "e-Alfa Cargo",
+    "category": "cargo_three_wheeler",
+    "fuel_types": [
+      "electric"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-alfa-plus-duo",
+    "manufacturer": "Mahindra",
+    "model": "Alfa Plus Duo",
+    "category": "cargo_three_wheeler",
+    "fuel_types": [
+      "cng"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-alfa-plus",
+    "manufacturer": "Mahindra",
+    "model": "Alfa Plus",
+    "category": "cargo_three_wheeler",
+    "fuel_types": [
+      "diesel"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-treo-zor-dv",
+    "manufacturer": "Mahindra",
+    "model": "Treo Zor DV",
+    "category": "cargo_three_wheeler",
+    "fuel_types": [
+      "electric"
+    ],
+    "payload_min_kg": 500,
+    "payload_max_kg": 500,
+    "max_speed_kmph": 50,
+    "source_url": "https://mahindralastmilemobility.com/treo-zor-dv",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM lists this payload for the named variant. Confirm your RC and body configuration. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types",
+      "payload_max_kg",
+      "max_speed_kmph"
+    ]
+  },
+  {
+    "id": "oem:mahindra-zor-grand-dv-plus",
+    "manufacturer": "Mahindra",
+    "model": "Zor Grand DV Plus",
+    "category": "cargo_three_wheeler",
+    "fuel_types": [
+      "electric"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": 50,
+    "source_url": "https://mahindralastmilemobility.com/zor-grand-dv-plus",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types",
+      "max_speed_kmph"
+    ]
+  },
+  {
+    "id": "oem:mahindra-jeeto-strong-diesel",
+    "manufacturer": "Mahindra",
+    "model": "Jeeto Strong Diesel",
+    "category": "mini_truck",
+    "fuel_types": [
+      "diesel"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-jeeto-l6",
+    "manufacturer": "Mahindra",
+    "model": "Jeeto L6",
+    "category": "mini_truck",
+    "fuel_types": [
+      "diesel"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-jeeto-strong-cng",
+    "manufacturer": "Mahindra",
+    "model": "Jeeto Strong CNG",
+    "category": "mini_truck",
+    "fuel_types": [
+      "cng"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-jeeto-plus-petrol",
+    "manufacturer": "Mahindra",
+    "model": "Jeeto Plus Petrol",
+    "category": "mini_truck",
+    "fuel_types": [
+      "petrol"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://mahindralastmilemobility.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:mahindra-zeo",
+    "manufacturer": "Mahindra",
+    "model": "ZEO",
+    "category": "mini_truck",
+    "fuel_types": [
+      "electric"
+    ],
+    "payload_min_kg": 765,
+    "payload_max_kg": 765,
+    "max_speed_kmph": 60,
+    "source_url": "https://mahindralastmilemobility.com/mahindra-zeo",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM lists this payload for the named variant. Confirm your RC and body configuration. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types",
+      "payload_max_kg",
+      "max_speed_kmph"
+    ]
+  },
+  {
+    "id": "oem:tata-motors-ace-ev-1000",
+    "manufacturer": "Tata Motors",
+    "model": "Ace EV 1000",
+    "category": "mini_truck",
+    "fuel_types": [
+      "electric"
+    ],
+    "payload_min_kg": 1000,
+    "payload_max_kg": 1000,
+    "max_speed_kmph": null,
+    "source_url": "https://smalltrucks.tatamotors.com/ace-ev-1000",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM lists this payload for the named variant. Confirm your RC and body configuration. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types",
+      "payload_max_kg"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-dost-plus-xl-cng",
+    "manufacturer": "Ashok Leyland",
+    "model": "DOST + XL CNG",
+    "category": "pickup",
+    "fuel_types": [
+      "cng"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-dost-cng",
+    "manufacturer": "Ashok Leyland",
+    "model": "DOST CNG",
+    "category": "pickup",
+    "fuel_types": [
+      "cng"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-cng",
+    "manufacturer": "Ashok Leyland",
+    "model": "BADA DOST CNG",
+    "category": "pickup",
+    "fuel_types": [
+      "cng"
+    ],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category",
+      "fuel_types"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-saathi",
+    "manufacturer": "Ashok Leyland",
+    "model": "SAATHI",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-dost-xl",
+    "manufacturer": "Ashok Leyland",
+    "model": "DOST XL",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-dost-plus-xl",
+    "manufacturer": "Ashok Leyland",
+    "model": "DOST + XL",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-i2",
+    "manufacturer": "Ashok Leyland",
+    "model": "BADA DOST i2",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-i3-plus",
+    "manufacturer": "Ashok Leyland",
+    "model": "BADA DOST i3+",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-i4",
+    "manufacturer": "Ashok Leyland",
+    "model": "BADA DOST i4",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-i5",
+    "manufacturer": "Ashok Leyland",
+    "model": "BADA DOST i5",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-i5-plus",
+    "manufacturer": "Ashok Leyland",
+    "model": "Bada Dost i5+",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-bada-dost-i6",
+    "manufacturer": "Ashok Leyland",
+    "model": "BADA DOST i6",
+    "category": "pickup",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-partner-4-tyre",
+    "manufacturer": "Ashok Leyland",
+    "model": "Partner 4 Tyre",
+    "category": "lcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-partner-6-tyre",
+    "manufacturer": "Ashok Leyland",
+    "model": "Partner 6 Tyre",
+    "category": "lcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-partner-super",
+    "manufacturer": "Ashok Leyland",
+    "model": "Partner Super",
+    "category": "mdcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-ecomet-star",
+    "manufacturer": "Ashok Leyland",
+    "model": "ecomet STAR",
+    "category": "mdcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-boss",
+    "manufacturer": "Ashok Leyland",
+    "model": "BOSS",
+    "category": "mdcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-avtr-4525h-dtla",
+    "manufacturer": "Ashok Leyland",
+    "model": "AVTR 4525H DTLA",
+    "category": "hcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-avtr-4925h-dtla",
+    "manufacturer": "Ashok Leyland",
+    "model": "AVTR 4925H DTLA",
+    "category": "hcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-avtr-4625h-la",
+    "manufacturer": "Ashok Leyland",
+    "model": "AVTR 4625H LA",
+    "category": "hcv",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-icv-tippers",
+    "manufacturer": "Ashok Leyland",
+    "model": "ICV Tippers",
+    "category": "tipper",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:ashok-leyland-6x4-tractor-with-3-axle-trailer",
+    "manufacturer": "Ashok Leyland",
+    "model": "6x4 Tractor with 3-axle trailer",
+    "category": "tractor_trailer",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.ashokleyland.com/in/lightvehicles/smallcommercialvechicles",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  },
+  {
+    "id": "oem:force-motors-traveller-n-delivery-van-ac-3050-wb",
+    "manufacturer": "Force Motors",
+    "model": "Traveller N Delivery Van AC 3050 WB",
+    "category": "cargo_van",
+    "fuel_types": [],
+    "payload_min_kg": null,
+    "payload_max_kg": null,
+    "max_speed_kmph": null,
+    "source_url": "https://www.forcemotors.com/",
+    "source_checked_at": "2026-09-12",
+    "source_note": "OEM model/family listing; payload and efficiency are not verified. Enter kerb weight, governed speed and measured consumption from your fleet records. GVW is not payload.",
+    "verified_fields": [
+      "manufacturer",
+      "model",
+      "category"
+    ]
+  }
+]
