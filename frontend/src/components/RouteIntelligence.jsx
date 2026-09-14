@@ -6,7 +6,7 @@ const STRATEGY_COPY = {
   },
   balanced: {
     eyebrow: 'SMART COMPROMISE',
-    fallbackReason: "Best combined time, fuel-cost and carbon result under GreenRoute's 40/30/30 weighting.",
+    fallbackReason: "Best combined time, fuel-cost and carbon result under the selected objective weights.",
     fallbackBestFor: 'Everyday logistics where time, cost and sustainability all matter',
   },
   greenest: {
@@ -83,8 +83,9 @@ export default function RouteIntelligence({ route, fastestRoute }) {
     <section className={`route-intelligence ${route.kind}`} aria-live="polite">
       <div className="intel-copy">
         <span className="intel-eyebrow">{copy.eyebrow}</span>
-        <h3>Why {route.label} wins this comparison</h3>
+        <h3>Why this route was selected</h3>
         <p>{route.reason || copy.fallbackReason}</p>
+        {route.shared_route_explanation && <p>{route.shared_route_explanation}</p>}
         <div className="best-for"><span>Best for</span><b>{route.best_for || copy.fallbackBestFor}</b></div>
       </div>
 

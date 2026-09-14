@@ -1,4 +1,5 @@
 from dataclasses import asdict
+import asyncio
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +23,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.8.1')
+app = FastAPI(title='GreenRoute API', version='0.9.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -70,7 +71,7 @@ def health():
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.8.1',
+        'version': '0.9.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
         'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),
@@ -145,7 +146,7 @@ async def optimize_routes(request: RouteOptimizationRequest):
             if settings.graphhopper_api_key:
                 try:
                     graphhopper = GraphHopperClient(settings.graphhopper_api_key)
-                    candidates = await graphhopper.calculate_routes(origin, destination)
+                    candidates = await asyncio.wait_for(graphhopper.calculate_routes(origin, destination), timeout=5)
                     routing_provider = 'graphhopper'
                     traffic_aware = False
                     notice = (
@@ -207,7 +208,7 @@ async def optimize_routes(request: RouteOptimizationRequest):
             )
             for candidate in candidates
         ]
-        result = build_recommendations(measured)
+        result = build_recommendations(measured, request.objective_weights.model_dump())
         return {
             'mode': mode,
             'routing_provider': routing_provider,

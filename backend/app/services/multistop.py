@@ -23,17 +23,22 @@ async def plan_multi_stop(request, optimize_leg):
             vehicle=request.vehicle, vehicle_type=request.vehicle_type,
             fuel_price_per_litre=request.fuel_price_per_litre,
             electricity_price_per_kwh=request.electricity_price_per_kwh,
+            objective_weights=request.objective_weights,
         ))
         if index < len(request.stops):
             remaining = max(0, remaining - request.stops[index].weight_kg)
     # Bound provider concurrency and finish before Vercel's 60-second deadline.
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(7)
     async def calculate(leg):
         async with semaphore:
-            return await optimize_leg(leg)
+            try:
+                return await asyncio.wait_for(optimize_leg(leg), timeout=22)
+            except Exception as exc:
+                detail = getattr(exc, 'detail', None) or str(exc) or 'Routing timed out'
+                raise ValueError(f"Leg {leg.origin.label} → {leg.destination.label}: {detail}. Check these pins or retry.") from exc
     tasks = [asyncio.create_task(calculate(leg)) for leg in requests]
     try:
-        async with asyncio.timeout(45):
+        async with asyncio.timeout(50):
             legs = await asyncio.gather(*tasks)
     finally:
         for task in tasks:
@@ -46,13 +51,18 @@ async def plan_multi_stop(request, optimize_leg):
         totals[kind] = {
             'kind': kind,
             'fuel_type': selected[0].get('fuel_type'),
+            'leg_candidate_ids': [route.get('candidate_id') for route in selected],
             **{key: round(sum(route.get(key, 0) for route in selected), 2)
                for key in ('tailpipe_co2_kg', 'electricity_co2_kg', 'energy_kwh')},
             **{key: round(sum(route[key] for route in selected), 2)
                for key in ('distance_km', 'duration_minutes', 'fuel_cost', 'co2_kg')},
             'coordinates': [point for route in selected for point in route['coordinates']],
         }
+    for kind, route in totals.items():
+        route['shared_physical_route_with'] = [other for other, value in totals.items()
+            if other != kind and value['leg_candidate_ids'] == route['leg_candidate_ids']]
     return {
+        'objective_weights': request.objective_weights.model_dump(),
         'routes': list(totals.values()),
         'legs': [{'origin': leg['origin'], 'destination': leg['destination'],
                   'mode': leg['mode'], 'provider': leg['routing_provider']} for leg in legs],

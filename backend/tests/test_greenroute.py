@@ -102,7 +102,9 @@ class GreenRouteCoreTests(unittest.TestCase):
         self.assertEqual(result['fastest']['candidate_id'], 'fast')
         self.assertEqual(result['balanced']['candidate_id'], 'balanced')
         self.assertEqual(result['greenest']['candidate_id'], 'green')
-        self.assertIn('40% time', result['balanced']['reason'])
+        self.assertIn('50% time', result['balanced']['reason'])
+        self.assertIn('30% cost', result['balanced']['reason'])
+        self.assertIn('20% carbon', result['balanced']['reason'])
 
     def test_dashboard_uses_selected_route_and_fastest_baseline(self):
         history = [{'selected_strategy': 'greenest', 'route_candidates': [

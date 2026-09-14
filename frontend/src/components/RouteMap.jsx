@@ -202,7 +202,7 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     const allPoints = [...routePoints, ...endpoints, ...stateRef.current.stops.map(endpointLatLng).filter(Boolean)]
     if (!allPoints.length) return
 
-    const signature = `${allPoints[0].join(',')}|${allPoints[allPoints.length - 1].join(',')}|${routePoints.length}`
+    const signature = `${[...endpoints, ...stateRef.current.stops.map(endpointLatLng).filter(Boolean)].map(p => p.join(',')).join('|')}|${routePoints.length}`
     if (!force && fitSignatureRef.current === signature) return
     fitSignatureRef.current = signature
 
@@ -265,13 +265,14 @@ export default function RouteMap({ routes, selectedKind, onSelectKind, origin, d
     const handleMapClick = async (event) => {
       const activePickMode = pickModeRef.current
       if (!activePickMode || pickingRef.current) return
+      const pickCallback = onPickPlaceRef.current
       setPicking(true)
       pickingRef.current = true
       try {
         const place = await reverseGeocode(event.latlng.lat, event.latlng.lng)
-        onPickPlaceRef.current?.(activePickMode, place)
+        pickCallback?.(activePickMode, { ...place, lat: event.latlng.lat, lon: event.latlng.lng })
       } catch {
-        onPickPlaceRef.current?.(activePickMode, {
+        pickCallback?.(activePickMode, {
           label: 'Pinned location',
           address: `${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`,
           lat: event.latlng.lat,

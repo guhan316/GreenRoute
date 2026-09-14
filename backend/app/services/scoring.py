@@ -38,16 +38,10 @@ def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
         reason = 'Lowest traffic-adjusted travel time among the evaluated route candidates.'
         best_for = 'Emergencies, hospitals, medicines and time-critical shipments'
     elif kind == 'balanced':
-        if route.get('diversity_selected'):
-            reason = (
-                "Best non-dominated middle trade-off close to GreenRoute's weighted optimum, "
-                'using 40% time, 30% fuel-cost and 30% carbon.'
-            )
-        else:
-            reason = (
-                "Best non-dominated compromise using GreenRoute's 40% time, 30% fuel-cost and "
-                '30% carbon weighting. Dominated routes are never promoted just to look different.'
-            )
+        weights = route['objective_weights']
+        weighting = f"{weights['time']:.0%} time, {weights['cost']:.0%} cost and {weights['carbon']:.0%} carbon"
+        reason = (f'Pareto-efficient middle option within 0.05 of the lowest normalized score using {weighting}.'
+                  if route.get('diversity_selected') else f'Lowest normalized weighted score among Pareto-efficient roads using {weighting}.')
         best_for = 'Everyday logistics where time, operating cost and sustainability all matter'
     else:
         reason = (
@@ -75,10 +69,15 @@ def _decorate_recommendation(route: dict, kind: str, fastest: dict) -> dict:
     }
 
 
-def build_recommendations(routes: list[dict]) -> dict:
+def build_recommendations(routes: list[dict], weights: dict | None = None) -> dict:
     if not routes:
         raise ValueError('No route candidates were returned')
 
+    weights = weights or {'time': 50, 'cost': 30, 'carbon': 20}
+    total = sum(weights.values())
+    if total <= 0 or any(value < 0 for value in weights.values()):
+        raise ValueError('Objective weights must be non-negative with a positive total')
+    weights = {key: weights[key] / total for key in ('time', 'cost', 'carbon')}
     time_scores = _normalize([route['duration_minutes'] for route in routes])
     cost_scores = _normalize([route['fuel_cost'] for route in routes])
     carbon_scores = _normalize([route['co2_kg'] for route in routes])
@@ -86,13 +85,14 @@ def build_recommendations(routes: list[dict]) -> dict:
     enriched = []
     for index, route in enumerate(routes):
         balanced_score = (
-            (0.40 * time_scores[index])
-            + (0.30 * cost_scores[index])
-            + (0.30 * carbon_scores[index])
+            (weights['time'] * time_scores[index])
+            + (weights['cost'] * cost_scores[index])
+            + (weights['carbon'] * carbon_scores[index])
         )
         enriched.append(
             {
                 **route,
+                'objective_weights': weights,
                 'balanced_score': round(balanced_score, 4),
                 'score_breakdown': {
                     'time': round(time_scores[index], 4),
@@ -118,7 +118,7 @@ def build_recommendations(routes: list[dict]) -> dict:
     distinct_pareto = [route for route in pareto if route.get('candidate_id') not in reserved_ids]
     if distinct_pareto:
         alternative = min(distinct_pareto, key=lambda route: route['balanced_score'])
-        if alternative['balanced_score'] <= balanced_best['balanced_score'] + 0.15:
+        if alternative['balanced_score'] <= balanced_best['balanced_score'] + 0.05:
             balanced = {**alternative, 'diversity_selected': True}
 
     recommendations = {
@@ -136,12 +136,15 @@ def build_recommendations(routes: list[dict]) -> dict:
         ]
         if shared:
             recommendations[kind]['shared_physical_route_with'] = shared
+            recommendations[kind]['shared_route_explanation'] = ('Only one evaluated road is Pareto-efficient.' if len(pareto) == 1 else 'This road wins more than one objective at the current weights; change the Balanced weights to explore another trade-off.')
 
     recommendation_ids = [recommendations[k].get('candidate_id') for k in kinds]
     return {
         'candidates': enriched,
         'recommendations': recommendations,
         'comparison_baseline': 'fastest',
+        'objective_weights': weights,
+        'scoring_note': 'Cost and carbon both depend on estimated energy consumption for the selected vehicle, so their rankings can coincide.',
         'distinct_recommendation_count': len(set(recommendation_ids)),
         'pareto_candidate_count': len(pareto),
         'dominated_candidate_count': len(enriched) - len(pareto),
