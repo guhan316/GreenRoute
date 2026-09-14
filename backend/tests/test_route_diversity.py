@@ -40,6 +40,20 @@ class RouteDiversityTests(unittest.TestCase):
         self.assertEqual(result['distinct_recommendation_count'], 3)
         self.assertEqual(result['dominated_candidate_count'], 0)
 
+    def test_custom_weights_change_balanced_choice(self):
+        routes = [
+            {'candidate_id': 'fast', 'duration_minutes': 100, 'fuel_cost': 1400, 'co2_kg': 38},
+            {'candidate_id': 'middle', 'duration_minutes': 112, 'fuel_cost': 1000, 'co2_kg': 27},
+            {'candidate_id': 'green', 'duration_minutes': 145, 'fuel_cost': 700, 'co2_kg': 18},
+        ]
+
+        time_first = build_recommendations(routes, {'time': 80, 'cost': 10, 'carbon': 10})
+        carbon_first = build_recommendations(routes, {'time': 10, 'cost': 10, 'carbon': 80})
+
+        self.assertEqual(time_first['recommendations']['balanced']['candidate_id'], 'fast')
+        self.assertEqual(carbon_first['recommendations']['balanced']['candidate_id'], 'green')
+        self.assertEqual(time_first['objective_weights']['time'], 0.8)
+
     def test_balanced_never_uses_route_dominated_on_all_objectives(self):
         routes = [
             {

@@ -31,6 +31,12 @@ class MultiStopTests(unittest.TestCase):
         self.payload['stops'] = []
         self.assertEqual(self.client.post('/api/routes/multi-stop', json=self.payload).status_code, 422)
 
+    def test_custom_objective_weights_are_returned(self):
+        self.payload['objective_weights'] = {'time': 70, 'cost': 20, 'carbon': 10}
+        response = self.client.post('/api/routes/multi-stop', json=self.payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['objective_weights'], self.payload['objective_weights'])
+
     def test_duplicate_consecutive_stop(self):
         self.payload['stops'][0]['place'] = self.payload['depot']
         self.assertEqual(self.client.post('/api/routes/multi-stop', json=self.payload).status_code, 400)

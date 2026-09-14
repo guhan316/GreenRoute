@@ -316,7 +316,7 @@ class TomTomClient:
         combustion: bool = True,
     ) -> list[dict]:
         straight_line_km = self._straight_line_km(origin, destination)
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             requests = [
                 self._calculate_route_type(
                     client, origin, destination, vehicle_weight_kg, max_speed_kmph,

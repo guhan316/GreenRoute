@@ -27,6 +27,7 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
   }, [])
 
   useEffect(() => {
+    const id = ++requestId.current
     if (!canSearch) {
       setResults([])
       setOpen(false)
@@ -37,7 +38,6 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
       return undefined
     }
 
-    const id = ++requestId.current
     setOpen(true)
     setBusy(true)
     setSearched(false)
@@ -63,10 +63,11 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
       }
     }, 260)
 
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer); requestId.current += 1 }
   }, [canSearch, query])
 
   function choose(place) {
+    requestId.current += 1
     onSelect(place)
     setOpen(false)
     setResults([])
@@ -123,6 +124,7 @@ export default function LocationSearch({ label, text, selected, onTextChange, on
         <i>{busy ? '…' : selected ? '✓' : '⌖'}</i>
       </div>
 
+      {unresolved && !busy && <small className="location-help">Select a search result to confirm this stop, or pin it on the map.</small>}
       {selected && (
         <small className="resolved-place">✓ Exact place pinned at {selected.lat.toFixed(5)}, {selected.lon.toFixed(5)}</small>
       )}

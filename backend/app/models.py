@@ -36,7 +36,20 @@ class VehicleInput(BaseModel):
         return self
 
 
+class ObjectiveWeights(BaseModel):
+    time: float = Field(default=50, ge=0, le=100, allow_inf_nan=False)
+    cost: float = Field(default=30, ge=0, le=100, allow_inf_nan=False)
+    carbon: float = Field(default=20, ge=0, le=100, allow_inf_nan=False)
+
+    @model_validator(mode='after')
+    def positive_total(self):
+        if self.time + self.cost + self.carbon <= 0:
+            raise ValueError('At least one objective weight must be greater than zero')
+        return self
+
+
 class RouteOptimizationRequest(BaseModel):
+    objective_weights: ObjectiveWeights = Field(default_factory=ObjectiveWeights)
     origin: str | PlaceInput
     destination: str | PlaceInput
     load_kg: float = Field(ge=0, le=50000)
@@ -67,6 +80,7 @@ class DeliveryStop(BaseModel):
 
 
 class MultiStopRequest(BaseModel):
+    objective_weights: ObjectiveWeights = Field(default_factory=ObjectiveWeights)
     depot: PlaceInput
     stops: list[DeliveryStop] = Field(min_length=1, max_length=12)
     return_to_depot: bool = False
