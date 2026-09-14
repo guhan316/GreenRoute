@@ -2,7 +2,8 @@ import Emissions, { emissionsLabel } from './components/Emissions.jsx'
 import MultiStopPlanner from './components/MultiStopPlanner.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AuthPanel from './components/AuthPanel.jsx'
-import HeroScene from './components/HeroScene.jsx'
+import ObjectiveWeights, { DEFAULT_WEIGHTS } from './components/ObjectiveWeights.jsx'
+import './minimal.css'
 import HistoryDashboard from './components/HistoryDashboard.jsx'
 import LocationSearch from './components/LocationSearch.jsx'
 import RouteIntelligence from './components/RouteIntelligence.jsx'
@@ -53,7 +54,7 @@ function buildMapRoutes(data, strategyRoutes) {
   const mapRoutes = [...byCandidate.values()]
   const seen = new Set(byCandidate.keys())
   for (const candidate of data.candidates || []) {
-    if (mapRoutes.length >= 3) break
+    if (mapRoutes.length >= 10) break
     const candidateId = candidate.candidate_id || `${candidate.distance_km}-${candidate.duration_minutes}`
     if (seen.has(candidateId)) continue
     seen.add(candidateId)
@@ -66,11 +67,11 @@ function buildMapRoutes(data, strategyRoutes) {
       isAlternative: true,
     })
   }
-  return mapRoutes.slice(0, 3)
+  return mapRoutes
 }
 
 function RouteCard({ route, fastestRoute, active, onClick }) {
-  const icon = route.kind === 'fastest' ? '⚡' : route.kind === 'balanced' ? '⚖' : '🌱'
+  const icon = route.kind === 'fastest' ? '01' : route.kind === 'balanced' ? '02' : '03'
   const tradeoff = route.tradeoff || {
     extra_minutes_vs_fastest: route.duration_minutes - fastestRoute.duration_minutes,
     fuel_cost_saved_vs_fastest: fastestRoute.fuel_cost - route.fuel_cost,
@@ -90,7 +91,16 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
   )
 }
 
+const currentView = () => ['planner','multi-stop','intelligence','history'].includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'planner'
+
 export default function App() {
+  const [activeView, setActiveView] = useState(currentView)
+  const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
+  useEffect(() => {
+    function navigate() { setActiveView(currentView()); window.scrollTo(0,0) }
+    window.addEventListener('hashchange', navigate)
+    return () => window.removeEventListener('hashchange', navigate)
+  }, [])
   const [form, setForm] = useState({
     origin_text: '',
     destination_text: '',
@@ -250,6 +260,7 @@ export default function App() {
         fuel_price_per_litre: selectedVehicle.fuel_type === 'electric' ? 1 : fuelPriceValue,
         electricity_price_per_kwh: selectedVehicle.fuel_type === 'electric' ? electricityPriceValue : 1,
         departure_time: departureTime,
+        objective_weights: weights,
       }
       const data = await optimizeRoute(requestPayload)
       const strategyRoutes = Object.entries(data.recommendations).map(([kind, route]) => ({ ...route, kind, label: kind.charAt(0).toUpperCase() + kind.slice(1) }))
@@ -296,19 +307,16 @@ export default function App() {
 
   return (
     <main className="site-shell">
-      <div className="ambient-glow ambient-glow-one" aria-hidden="true" />
-      <div className="ambient-glow ambient-glow-two" aria-hidden="true" />
-
       <nav className="topbar">
         <a className="brand" href="#top" aria-label="GreenRoute home">
           <span className="brand-mark">G</span>
           <span>Green<span>Route</span></span>
         </a>
         <div className="nav-links">
-          <a href="#planner">Route planner</a>
-          <a href="#multi-stop">Multi-stop planner</a>
-          <a href="#intelligence">Decision insights</a>
-          <a href="#history">Saved trips</a>
+          <a href="#planner" aria-current={activeView === 'planner' ? 'page' : undefined}>Route planner</a>
+          <a href="#multi-stop" aria-current={activeView === 'multi-stop' ? 'page' : undefined}>Multi-stop</a>
+          <a href="#intelligence" aria-current={activeView === 'intelligence' ? 'page' : undefined}>Scoring</a>
+          <a href="#history" aria-current={activeView === 'history' ? 'page' : undefined}>History</a>
         </div>
         <div className="nav-actions">
           <span className={`status-pill ${routingMode}`}><i />{modeLabel}</span>
@@ -317,36 +325,13 @@ export default function App() {
         {authOpen && <AuthPanel session={session} onClose={() => setAuthOpen(false)} />}
       </nav>
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <div className="hero-badge"><i /> Decision intelligence for Indian logistics</div>
-          <h1>Smarter routes.<em> Cleaner deliveries.</em></h1>
-          <p>Compare real road options by time, operating cost and carbon—then choose the route that fits today’s shipment.</p>
-          <div className="hero-actions">
-            <a className="primary-btn" href="#planner">Plan a route <span>→</span></a>
-            <a className="secondary-btn" href="#intelligence">See how routes are scored</a>
-          </div>
-          <div className="hero-assurances" aria-label="GreenRoute capabilities">
-            <span><b>✓</b> Exact pickup points</span>
-            <span><b>✓</b> Vehicle-aware estimates</span>
-            <span><b>✓</b> Transparent trade-offs</span>
-          </div>
-        </div>
-        <div className="hero-stage">
-          <HeroScene />
-          <div className="hero-float hero-float-route"><small>RECOMMENDATION ENGINE</small><strong>3 strategies</strong><span>Fastest · Balanced · Greenest</span></div>
-          <div className="hero-float hero-float-carbon"><small>MEASURED FOR EACH ROAD</small><strong>Time · ₹ · CO₂</strong><span>No hidden weighting</span></div>
-        </div>
-      </section>
+      <header className="workspace-header" id="top">
+        <div><span className="eyebrow">GREENROUTE / LOGISTICS WORKSPACE</span><h1>{{planner:'Every delivery, a better decision.', 'multi-stop':'One depot. Every stop.', intelligence:'Understand every route choice.', history:'Your delivery record.'}[activeView]}</h1><p>{{planner:'Compare time, cost and carbon on real roads.', 'multi-stop':'Build your itinerary anywhere in India.', intelligence:'Clear objectives. Visible trade-offs.', history:'Review saved trips and estimated savings.'}[activeView]}</p></div>
+        {activeView !== 'intelligence' && <a className="secondary-btn" href="#intelligence">See how routes are scored ↗</a>}
+      </header>
+      <MultiStopPlanner vehicle={form.vehicle} catalog={vehicleCatalog} hidden={activeView !== 'multi-stop'} />
 
-      <MultiStopPlanner vehicle={form.vehicle} />
-
-      <section className="planner-section" id="planner">
-        <div className="section-heading planner-heading">
-          <div><span>ROUTE PLANNER</span><h2>One shipment. Three honest choices.</h2></div>
-          <p>Set the real pickup, delivery, load and vehicle. GreenRoute compares the available roads without inventing alternatives.</p>
-        </div>
-
+      <section className="planner-section" id="planner" hidden={activeView !== 'planner'}>
         <div className={`planner-status ${routingMode}`} role="status">
           <span className="planner-status-icon"><i /></span>
           <div><strong>{modeLabel}</strong><small>{modeDetail}</small></div>
@@ -355,7 +340,7 @@ export default function App() {
 
         <div className="planner-grid v2-grid">
           <form className="planner-form glass-panel v2-form" onSubmit={submit}>
-            <div className="form-title"><span>01</span><div><h3>Build the shipment</h3><p>Use exact suggestions or pin either point on the map.</p></div></div>
+            <div className="form-title"><div><h3>Shipment details</h3><p>Search an address or pin it on the map.</p></div></div>
 
             <div className="form-group route-point-group">
               <div className="form-group-label"><span>Route points</span><small>Required</small></div>
@@ -376,9 +361,10 @@ export default function App() {
 
             <VehicleSelector catalog={vehicleCatalog} vehicle={form.vehicle} onChange={changeVehicle} />
 
+            <ObjectiveWeights value={weights} onChange={setWeights} />
             <div className={`load-meter ${loadInvalid ? 'over' : ''}`}><div><span>Payload utilisation</span><b>{Math.round(loadRatio)}%</b></div><div className="load-track"><i style={{ width: `${Math.min(100, loadRatio)}%` }} /></div><small>{loadValue.toLocaleString('en-IN')} / {Number(selectedVehicle.max_payload_kg || 0).toLocaleString('en-IN')} kg rated payload</small></div>
             <div className="departure-block"><span>Departure</span><div className="departure-toggle"><label className={form.departure_mode === 'now' ? 'active' : ''}><input type="radio" name="departure_mode" value="now" checked={form.departure_mode === 'now'} onChange={change} />Now</label><label className={form.departure_mode === 'scheduled' ? 'active' : ''}><input type="radio" name="departure_mode" value="scheduled" checked={form.departure_mode === 'scheduled'} onChange={change} />Schedule</label></div>{form.departure_mode === 'scheduled' && <input type="datetime-local" name="scheduled_departure" value={form.scheduled_departure} onChange={change} required />}</div>
-            <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete || numericIncomplete} type="submit"><span>{loading ? 'Comparing roads…' : 'Compare route strategies'}</span><b>→</b></button>
+            <button className="optimize-btn" disabled={loading || loadInvalid || vehicleIncomplete || placesIncomplete || numericIncomplete || !Object.values(weights).some(value => value > 0)} type="submit"><span>{loading ? 'Comparing roads…' : 'Compare route strategies'}</span><b>→</b></button>
             {placesIncomplete && <p className="form-warning">Choose a suggestion or pin both locations directly on the map.</p>}
             {loadInvalid && <p className="form-warning">Shipment exceeds the vehicle's entered rated payload.</p>}
           </form>
@@ -393,14 +379,22 @@ export default function App() {
 
         {routes.length > 0 && fastestRoute && <div className="route-results-heading"><div><span>ROUTE COMPARISON</span><h3>Choose what matters for this delivery</h3></div><small>Select a card to highlight its physical road.</small></div>}
         {routes.length > 0 && fastestRoute && <div className="route-cards">{routes.map((route) => <RouteCard key={route.kind} route={route} fastestRoute={fastestRoute} active={selectedKind === route.kind} onClick={() => setSelectedKind(route.kind)} />)}</div>}
-        {routes.length > 0 && distinctStrategyRoads < 3 && <div className="strategy-overlap-note"><b>{distinctStrategyRoads === 1 ? 'One physical road wins multiple objectives.' : 'Two strategy labels share a physical road.'}</b> GreenRoute will not invent a worse route just to make three cards look different. Other genuine road candidates remain visible in grey.</div>}
-        {selectedRoute && fastestRoute && <div id="intelligence"><RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} /></div>}
+        {routes.length > 0 && distinctStrategyRoads < 3 && <div className="strategy-overlap-note"><b>{distinctStrategyRoads === 1 ? 'One physical road wins multiple objectives.' : 'Two strategy labels share a physical road.'}</b> The current vehicle’s cost and CO₂ estimates both depend on energy use. Shared roads can therefore win multiple objectives. Adjust Balanced priorities and recalculate to explore the trade-off.</div>}
+        {selectedRoute && fastestRoute && <RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} />}
         <div className="save-trip-bar glass-panel"><div><span>TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Your chosen route can be saved here'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Cloud sync is not configured yet.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save trip' : 'Sign in to save'}<span>↗</span></button></div>
       </section>
 
-      <section className="impact-section" id="impact"><div className="impact-copy"><span>CARBON INTELLIGENCE</span><h2>Every recommendation explains its trade-off.</h2><p>Energy use is estimated from the selected vehicle and shipment load. EVs have zero tailpipe CO₂. Charging CO₂ uses estimated electricity consumption × 0.716 kg/kWh (CEA FY 2022–23 baseline). Combustion vehicles show tailpipe CO₂. Comparisons exclude manufacturing, upstream fuel production and charging losses; they are not full lifecycle assessments.</p>{selectedSavings && selectedKind !== 'fastest' && selectedRoute && <p className="impact-saving">Choose {selectedRoute.label} and trade about <b>{Math.round(selectedSavings.extraMinutes)} extra minutes</b> for roughly <b>₹{Math.max(0, Math.round(selectedSavings.cost)).toLocaleString('en-IN')}</b> in energy savings and <b>{Math.max(0, selectedSavings.carbon).toFixed(1)} kg less CO₂</b> versus Fastest.</p>}</div><div className="impact-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="impact-core"><strong>{selectedRoute?.co2_kg.toFixed(1) || '—'}</strong><small>kg {emissionsLabel(selectedRoute?.fuel_type)}</small></div><span className="orbit-label one">TIME</span><span className="orbit-label two">COST</span><span className="orbit-label three">CARBON</span></div></section>
-
-      <HistoryDashboard session={session} dashboard={dashboard} trips={trips} loading={historyLoading} onRefresh={() => loadCloudData(session)} onDelete={deleteTrip} />
+      <section id="intelligence" className="scoring-page" hidden={activeView !== 'intelligence'}>
+        <div className="scoring-cards">
+          <article><span>01 / FASTEST</span><h2>Time comes first.</h2><p>Selects the lowest estimated travel time among the returned road options.</p></article>
+          <article><span>02 / BALANCED</span><h2>Your priorities, combined.</h2><p>Uses adjustable time, cost and CO₂ weights. Defaults to 50% time, 30% cost and 20% CO₂. Each metric is scaled from 0 to 1 across the evaluated candidates.</p></article>
+          <article><span>03 / GREENEST</span><h2>Lower estimated carbon.</h2><p>Selects the lowest estimated CO₂ among Pareto-efficient roads, using cost and time to break ties.</p></article>
+        </div>
+        <article className="method-card"><h2>Why can two strategies use the same road?</h2><p>A strategy is an objective, not a guarantee of a different road. For the same vehicle, cost and carbon both depend on energy consumed. A road that uses less fuel often wins both. Some locations also have only one practical road option.</p><p>Balanced considers a distinct Pareto-efficient middle road only when its normalized score is within 0.05 of the best weighted score. Roads that are worse on every objective are excluded.</p><code>Balanced score = time weight × normalized time + cost weight × normalized cost + CO₂ weight × normalized CO₂</code><p>A lower score is better. A Pareto-efficient road has no evaluated alternative that is at least as good on every metric and better on one.</p><a className="primary-btn" href="#planner">Adjust priorities in the planner →</a></article>
+        <article className="method-card"><h2>What the carbon number includes</h2><p>Combustion vehicles show estimated tailpipe CO₂. EVs show zero tailpipe CO₂ and a separate charging electricity estimate using 0.716 kg CO₂/kWh, the dated CEA FY 2022–23 baseline. Manufacturing, upstream fuel production and charging losses are excluded.</p><p>Multi-stop strategies combine the selected road for each leg in your chosen stop order. Service times, charging stops and fleet-wide assignment are not yet included.</p></article>
+        {selectedRoute && fastestRoute && <RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} />}
+      </section>
+      <div hidden={activeView !== 'history'}><HistoryDashboard session={session} dashboard={dashboard} trips={trips} loading={historyLoading} onRefresh={() => loadCloudData(session)} onDelete={deleteTrip} /></div>
       <footer><div><span className="brand-mark small">G</span><b>GreenRoute</b></div><p>Indian road logistics · exact location routing · vehicle-aware carbon analytics</p></footer>
     </main>
   )
