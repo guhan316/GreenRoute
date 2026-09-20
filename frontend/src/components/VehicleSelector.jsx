@@ -63,7 +63,7 @@ export default function VehicleSelector({ catalog, vehicle, onChange }) {
     <div className="vehicle-selector">
       <div className="selector-heading">
         <div><strong>Vehicle identity</strong><small>Manufacturer → model → manufacturing year</small></div>
-        <span>{vehicle.fuel_type === 'electric' ? 'Not applicable (EV)' : inferStage(vehicle.manufacture_year)}</span>
+        <span>{vehicle.fuel_type === 'electric' ? 'Not applicable (EV)' : vehicle.emission_stage ? vehicle.emission_stage : `Suggested: ${inferStage(vehicle.manufacture_year)}`}</span>
       </div>
       <div className="two-col">
         <label>Company<select value={vehicle.manufacturer} onChange={selectManufacturer} required><option value="">Select manufacturer</option>{manufacturers.map((name) => <option key={name} value={name}>{name}</option>)}<option value="Other / Custom">Other / Custom</option></select></label>
@@ -74,7 +74,19 @@ export default function VehicleSelector({ catalog, vehicle, onChange }) {
         <div className="three-col vehicle-spec-row">
           <label>Manufacturing year<input type="number" min="1990" max="2100" value={vehicle.manufacture_year} onChange={(e) => patch({ manufacture_year: Number(e.target.value) })} required /></label>
           <label>Fuel<select value={vehicle.fuel_type} onChange={(e) => patch({ fuel_type: e.target.value, emission_stage: '' })} required><option value="">Choose RC fuel type</option>{fuels.map((fuel) => <option key={fuel} value={fuel}>{fuel.toUpperCase()}</option>)}</select></label>
-          <label>Emission standard<input readOnly={vehicle.fuel_type === 'electric'} value={vehicle.fuel_type === 'electric' ? 'Not applicable (EV)' : (vehicle.emission_stage || inferStage(vehicle.manufacture_year))} onChange={(e) => patch({ emission_stage: e.target.value })} placeholder="Verify from RC" /></label>
+          <label>Emission standard{vehicle.fuel_type === 'electric'
+            ? <input readOnly value="Not applicable (EV)" />
+            : <select value={vehicle.emission_stage || ''} onChange={(e) => patch({ emission_stage: e.target.value })} required>
+                <option value="">Select BS stage</option>
+                <option value="BS VI">BS VI</option>
+                <option value="BS IV">BS IV</option>
+                <option value="BS III">BS III</option>
+                <option value="BS II">BS II</option>
+                <option value="BS I">BS I</option>
+                <option value="Pre-BS / Other">Pre-BS / Other</option>
+              </select>}
+            {vehicle.fuel_type !== 'electric' && <small>Year-based hint: {inferStage(vehicle.manufacture_year)}. Verify the actual stage from the RC.</small>}
+          </label>
         </div>
         <div className="two-col">
           <label>Rated payload (kg)<input type="number" min="1" value={vehicle.max_payload_kg} onChange={(e) => patch({ max_payload_kg: Number(e.target.value) })} required /></label>
