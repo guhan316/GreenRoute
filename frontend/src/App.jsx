@@ -9,7 +9,7 @@ import HistoryDashboard from './components/HistoryDashboard.jsx'
 import LocationSearch from './components/LocationSearch.jsx'
 import RouteIntelligence from './components/RouteIntelligence.jsx'
 import RouteMap from './components/RouteMap.jsx'
-import VehicleSelector, { inferStage } from './components/VehicleSelector.jsx'
+import VehicleSelector from './components/VehicleSelector.jsx'
 import { deleteSavedTrip, getDashboard, getHealth, getHistory, getVehicleCatalog, optimizeRoute, saveOptimization } from './lib/api.js'
 import { supabase, supabaseConfigured } from './lib/supabase.js'
 
@@ -140,7 +140,7 @@ export default function App() {
   const gaseousFuel = ['cng', 'lng'].includes(selectedVehicle.fuel_type)
   const loadRatio = Math.min(140, (loadValue / Math.max(selectedVehicle.max_payload_kg || 1, 1)) * 100)
   const loadInvalid = loadValue > (selectedVehicle.max_payload_kg || 0)
-  const vehicleIncomplete = !selectedVehicle.manufacturer || !selectedVehicle.model || !selectedVehicle.manufacture_year
+  const vehicleIncomplete = !selectedVehicle.manufacturer || !selectedVehicle.model || !selectedVehicle.manufacture_year || (selectedVehicle.fuel_type !== 'electric' && !selectedVehicle.emission_stage)
   const placesIncomplete = routingMode === 'live' && (!form.origin_place || !form.destination_place)
   const numericIncomplete = loadValue <= 0 || (selectedVehicle.fuel_type === 'electric' ? electricityPriceValue <= 0 : fuelPriceValue <= 0)
 
@@ -233,7 +233,7 @@ export default function App() {
       return
     }
     if (vehicleIncomplete) {
-      setMessage('Select the vehicle company, exact model/variant and manufacturing year before optimizing.')
+      setMessage('Select the vehicle company, exact model/variant, manufacturing year and Bharat Stage before optimizing.')
       return
     }
     if (numericIncomplete) {
@@ -251,7 +251,7 @@ export default function App() {
       const departureTime = form.departure_mode === 'scheduled' && form.scheduled_departure ? `${form.scheduled_departure}:00+05:30` : 'now'
       const vehicle = {
         ...form.vehicle,
-        emission_stage: form.vehicle.fuel_type === 'electric' ? 'Not applicable (EV)' : (form.vehicle.emission_stage || inferStage(form.vehicle.manufacture_year)),
+        emission_stage: form.vehicle.fuel_type === 'electric' ? 'Not applicable (EV)' : form.vehicle.emission_stage,
       }
       const requestPayload = {
         origin: form.origin_place || form.origin_text,
