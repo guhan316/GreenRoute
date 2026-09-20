@@ -18,7 +18,7 @@ GreenRoute is intentionally a **3D-enhanced interactive web app**, not a plain a
 - FastAPI + Python
 - GraphHopper Directions API as the primary road-routing provider
 - TomTom search/reverse-geocoding and temporary routing fallback during migration
-- Google OR-Tools (fleet/VRP optimization endpoint)
+- Google OR-Tools (multi-vehicle CVRP dispatch optimizer)
 - PostgreSQL + PostGIS schema (Supabase-ready)
 
 ## Repository layout
@@ -82,4 +82,4 @@ GitHub Actions runs two checks on `main` and `develop`:
 
 ## Current milestone
 
-**Final integration and validation:** interactive 3D landing experience, shipment planner, Leaflet road visualization, GraphHopper-first real-road routing, TomTom fallback/search support, vehicle/load-aware fuel and carbon scoring, transparent Fastest/Balanced/Greenest recommendations, Supabase-backed trip history, and an OR-Tools fleet solver.
+**Fleet dispatch milestone:** GreenRoute now includes an Orders + Fleet workspace that accepts delivery orders, customer destinations, shipment weights, priorities, deadlines, cargo types, vehicle/driver records, payload capacities and availability. Google OR-Tools automatically assigns eligible orders to available vehicles and optimizes each vehicle's visit sequence under capacity constraints. The result reports per-vehicle load/utilisation, order sequence and estimated fleet distance. Existing route planning, multi-stop planning, GraphHopper/TomTom routing, carbon scoring and Supabase trip history remain available.
