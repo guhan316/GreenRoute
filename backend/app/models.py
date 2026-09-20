@@ -88,3 +88,28 @@ class MultiStopRequest(BaseModel):
     vehicle: VehicleInput | None = None
     fuel_price_per_litre: float = Field(default=92.5, gt=0, le=500)
     electricity_price_per_kwh: float = Field(default=8, gt=0, le=100)
+
+
+class DispatchOrder(BaseModel):
+    order_id: str = Field(min_length=1, max_length=40)
+    customer: str = Field(min_length=1, max_length=120)
+    place: PlaceInput
+    weight_kg: float = Field(gt=0, le=50000, allow_inf_nan=False)
+    priority: int = Field(default=3, ge=1, le=5)
+    deadline: str | None = Field(default=None, max_length=64)
+    cargo_type: str = Field(default='general', max_length=80)
+    status: str = Field(default='pending', pattern='^(pending|assigned|in_transit|delivered)$')
+
+
+class DispatchVehicle(BaseModel):
+    vehicle_id: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=120)
+    driver: str | None = Field(default=None, max_length=120)
+    capacity_kg: float = Field(gt=0, le=80000, allow_inf_nan=False)
+    available: bool = True
+
+
+class DispatchPlanRequest(BaseModel):
+    depot: PlaceInput
+    orders: list[DispatchOrder] = Field(min_length=1, max_length=25)
+    vehicles: list[DispatchVehicle] = Field(min_length=1, max_length=10)
