@@ -1,5 +1,6 @@
 import Emissions, { emissionsLabel } from './components/Emissions.jsx'
 import MultiStopPlanner from './components/MultiStopPlanner.jsx'
+import DispatchPlanner from './components/DispatchPlanner.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AuthPanel from './components/AuthPanel.jsx'
 import ObjectiveWeights, { DEFAULT_WEIGHTS } from './components/ObjectiveWeights.jsx'
@@ -91,7 +92,7 @@ function RouteCard({ route, fastestRoute, active, onClick }) {
   )
 }
 
-const currentView = () => ['planner','multi-stop','intelligence','history'].includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'planner'
+const currentView = () => ['planner','multi-stop','dispatch','intelligence','history'].includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'planner'
 
 export default function App() {
   const [activeView, setActiveView] = useState(currentView)
@@ -296,9 +297,9 @@ export default function App() {
     try { await deleteSavedTrip(runId, session.access_token); setMessage('Saved trip removed.'); await loadCloudData(session) } catch (error) { setMessage(error.message) }
   }
 
-  const modeLabel = routingMode === 'live' ? 'Live traffic' : routingMode === 'demo' ? 'Demo mode' : routingMode === 'offline' ? 'Backend offline' : 'Connecting'
+  const modeLabel = routingMode === 'live' ? 'Live routing' : routingMode === 'demo' ? 'Demo mode' : routingMode === 'offline' ? 'Backend offline' : 'Connecting'
   const modeDetail = routingMode === 'live'
-    ? 'TomTom traffic data connected'
+    ? 'GraphHopper road routing with TomTom fallback'
     : routingMode === 'demo'
       ? 'Synthetic routes — safe for interface testing'
       : routingMode === 'offline'
@@ -315,6 +316,7 @@ export default function App() {
         <div className="nav-links">
           <a href="#planner" aria-current={activeView === 'planner' ? 'page' : undefined}>Route planner</a>
           <a href="#multi-stop" aria-current={activeView === 'multi-stop' ? 'page' : undefined}>Multi-stop</a>
+          <a href="#dispatch" aria-current={activeView === 'dispatch' ? 'page' : undefined}>Dispatch</a>
           <a href="#intelligence" aria-current={activeView === 'intelligence' ? 'page' : undefined}>Scoring</a>
           <a href="#history" aria-current={activeView === 'history' ? 'page' : undefined}>History</a>
         </div>
@@ -326,10 +328,11 @@ export default function App() {
       </nav>
 
       <header className="workspace-header" id="top">
-        <div><span className="eyebrow">GREENROUTE / LOGISTICS WORKSPACE</span><h1>{{planner:'Every delivery, a better decision.', 'multi-stop':'One depot. Every stop.', intelligence:'Understand every route choice.', history:'Your delivery record.'}[activeView]}</h1><p>{{planner:'Compare time, cost and carbon on real roads.', 'multi-stop':'Build your itinerary anywhere in India.', intelligence:'Clear objectives. Visible trade-offs.', history:'Review saved trips and estimated savings.'}[activeView]}</p></div>
+        <div><span className="eyebrow">GREENROUTE / LOGISTICS WORKSPACE</span><h1>{{planner:'Every delivery, a better decision.', 'multi-stop':'One depot. Every stop.', dispatch:'Orders in. Fleet assigned.', intelligence:'Understand every route choice.', history:'Your delivery record.'}[activeView]}</h1><p>{{planner:'Compare time, cost and carbon on real roads.', 'multi-stop':'Build your itinerary anywhere in India.', dispatch:'Create orders, manage fleet availability and let OR-Tools build the dispatch plan.', intelligence:'Clear objectives. Visible trade-offs.', history:'Review saved trips and estimated savings.'}[activeView]}</p></div>
         {activeView !== 'intelligence' && <a className="secondary-btn" href="#intelligence">See how routes are scored ↗</a>}
       </header>
       <MultiStopPlanner vehicle={form.vehicle} catalog={vehicleCatalog} hidden={activeView !== 'multi-stop'} />
+      <DispatchPlanner hidden={activeView !== 'dispatch'} />
 
       <section className="planner-section" id="planner" hidden={activeView !== 'planner'}>
         <div className={`planner-status ${routingMode}`} role="status">
@@ -391,7 +394,7 @@ export default function App() {
           <article><span>03 / GREENEST</span><h2>Lower estimated carbon.</h2><p>Selects the lowest estimated CO₂ among Pareto-efficient roads, using cost and time to break ties.</p></article>
         </div>
         <article className="method-card"><h2>Why can two strategies use the same road?</h2><p>A strategy is an objective, not a guarantee of a different road. For the same vehicle, cost and carbon both depend on energy consumed. A road that uses less fuel often wins both. Some locations also have only one practical road option.</p><p>Balanced considers a distinct Pareto-efficient middle road only when its normalized score is within 0.05 of the best weighted score. Roads that are worse on every objective are excluded.</p><code>Balanced score = time weight × normalized time + cost weight × normalized cost + CO₂ weight × normalized CO₂</code><p>A lower score is better. A Pareto-efficient road has no evaluated alternative that is at least as good on every metric and better on one.</p><a className="primary-btn" href="#planner">Adjust priorities in the planner →</a></article>
-        <article className="method-card"><h2>What the carbon number includes</h2><p>Combustion vehicles show estimated tailpipe CO₂. EVs show zero tailpipe CO₂ and a separate charging electricity estimate using 0.716 kg CO₂/kWh, the dated CEA FY 2022–23 baseline. Manufacturing, upstream fuel production and charging losses are excluded.</p><p>Multi-stop strategies combine the selected road for each leg in your chosen stop order. Service times, charging stops and fleet-wide assignment are not yet included.</p></article>
+        <article className="method-card"><h2>What the carbon number includes</h2><p>Combustion vehicles show estimated tailpipe CO₂. EVs show zero tailpipe CO₂ and a separate charging electricity estimate using 0.716 kg CO₂/kWh, the dated CEA FY 2022–23 baseline. Manufacturing, upstream fuel production and charging losses are excluded.</p><p>Multi-stop strategies combine the selected road for each leg in your chosen stop order. Fleet-wide capacity assignment is available in the Dispatch workspace; service-time and charging-stop constraints remain future extensions.</p></article>
         {selectedRoute && fastestRoute && <RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} />}
       </section>
       <div hidden={activeView !== 'history'}><HistoryDashboard session={session} dashboard={dashboard} trips={trips} loading={historyLoading} onRefresh={() => loadCloudData(session)} onDelete={deleteTrip} /></div>

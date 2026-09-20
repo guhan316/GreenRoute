@@ -88,3 +88,12 @@ export async function planMultiStop(payload) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   }), 'Unable to plan deliveries')
 }
+
+
+export async function optimizeDispatch(payload) {
+  return parseResponse(await fetch(`${API_BASE_URL}/api/dispatch/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }), 'Unable to optimize fleet dispatch')
+}

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .models import MultiStopRequest, OptimizationSaveRequest, RouteOptimizationRequest, VrpRequest
+from .models import DispatchPlanRequest, MultiStopRequest, OptimizationSaveRequest, RouteOptimizationRequest, VrpRequest
 from .services.carbon import (
     build_vehicle_profile,
     estimate_trip_metrics,
@@ -14,6 +14,7 @@ from .services.carbon import (
 )
 from .services.catalog import VehicleCatalogService
 from .services.demo import calculate_demo_routes, geocode_demo
+from .services.dispatch import solve_fleet_dispatch
 from .services.graphhopper import GraphHopperClient
 from .services.persistence import SupabasePersistence
 from .services.scoring import build_recommendations
@@ -23,7 +24,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='0.9.0')
+app = FastAPI(title='GreenRoute API', version='1.0.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -71,7 +72,7 @@ def health():
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '0.9.0',
+        'version': '1.0.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
         'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),
@@ -305,5 +306,14 @@ async def multi_stop(request: MultiStopRequest):
         return await plan_multi_stop(request, optimize_routes)
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail='Routing took too long. Try fewer stops or retry shortly.') from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+
+@app.post('/api/dispatch/optimize')
+def optimize_dispatch(request: DispatchPlanRequest):
+    try:
+        return solve_fleet_dispatch(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
