@@ -16,8 +16,9 @@ GreenRoute is intentionally a **3D-enhanced interactive web app**, not a plain a
 - Three.js + React Three Fiber + Drei
 - Leaflet + OpenStreetMap base tiles
 - FastAPI + Python
-- GraphHopper Directions API as the primary road-routing provider
-- TomTom search/reverse-geocoding and temporary routing fallback during migration
+- TomTom live-traffic routing as the primary provider for current trips
+- GraphHopper Directions API as the real-road fallback
+- TomTom search/reverse-geocoding for exact place selection
 - Google OR-Tools (multi-vehicle CVRP dispatch optimizer)
 - PostgreSQL + PostGIS schema (Supabase-ready)
 
@@ -34,8 +35,8 @@ database/     PostgreSQL/PostGIS schema
 GreenRoute keeps a credential-free development mode while preferring real road routing whenever a provider is configured:
 
 - **Demo mode:** used when no routing provider key is configured. It generates clearly labelled synthetic candidate routes so the complete UI, scoring and carbon workflow can be tested.
-- **Live road mode:** GraphHopper is the preferred route provider when `GRAPHOPPER_API_KEY` is configured. It returns real road geometry and ETA estimates using road-network data. These results are explicitly treated as non-live-traffic-aware.
-- **TomTom fallback:** if GraphHopper is unavailable and `TOMTOM_API_KEY` is configured, TomTom can supply the route and traffic-aware ETA. TomTom is also temporarily retained for typed place search while the geocoding layer is migrated.
+- **Live traffic mode:** when `TOMTOM_API_KEY` is configured, TomTom supplies traffic-aware route candidates, ETA and traffic-delay values. For trips departing now, the frontend can automatically re-check the route every 60 seconds and switch the selected strategy when current traffic makes another road preferable.
+- **GraphHopper fallback:** if TomTom traffic routing is temporarily unavailable and `GRAPHOPPER_API_KEY` is configured, GreenRoute falls back to real OpenStreetMap-based road geometry and ETA. Fallback results are clearly treated as non-live-traffic-aware.
 
 Synthetic demo routes must not be interpreted as real roads or traffic measurements. GraphHopper ETA must not be described as live-traffic data unless a traffic-aware source is explicitly used.
 
@@ -53,7 +54,7 @@ copy .env.example .env  # Windows
 uvicorn app.main:app --reload
 ```
 
-The default `.env.example` can start in demo mode. Add GraphHopper for primary real-road routing and optionally keep TomTom for search/fallback:
+The default `.env.example` can start in demo mode. Add TomTom for live-traffic routing/search and GraphHopper for resilient real-road fallback:
 
 ```env
 GRAPHOPPER_API_KEY=your_graphhopper_key_here
