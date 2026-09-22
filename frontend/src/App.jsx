@@ -129,6 +129,10 @@ export default function App() {
   const [trips, setTrips] = useState([])
   const [dashboard, setDashboard] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [trafficMonitoring, setTrafficMonitoring] = useState(false)
+  const [trafficRefreshing, setTrafficRefreshing] = useState(false)
+  const [lastTrafficCheck, setLastTrafficCheck] = useState(null)
+  const [trafficNotice, setTrafficNotice] = useState('Run a route with departure set to Now to start live traffic monitoring.')
 
   const selectedRoute = useMemo(() => routes.find((route) => route.kind === selectedKind) || routes[0] || null, [routes, selectedKind])
   const fastestRoute = useMemo(() => routes.find((route) => route.kind === 'fastest') || routes[0] || null, [routes])
@@ -199,6 +203,9 @@ export default function App() {
     setMapRoutes([])
     setLastOptimization(null)
     setLastOptimizationForm(null)
+    setTrafficMonitoring(false)
+    setLastTrafficCheck(null)
+    setTrafficNotice('Run a route with departure set to Now to start live traffic monitoring.')
   }
 
   const change = (event) => {
@@ -271,15 +278,75 @@ export default function App() {
       setRoutingMode(data.mode)
       setLastOptimization(data)
       setLastOptimizationForm(requestPayload)
+      const liveMonitorReady = requestPayload.departure_time === 'now' && data.traffic_aware
+      setTrafficMonitoring(liveMonitorReady)
+      setLastTrafficCheck(liveMonitorReady ? new Date() : null)
+      setTrafficNotice(liveMonitorReady
+        ? 'Live traffic monitoring is ON. GreenRoute will re-check traffic every 60 seconds and refresh the route when traffic conditions change.'
+        : data.traffic_aware
+          ? 'Traffic-aware route calculated for the scheduled departure. Automatic monitoring is available only for trips departing now.'
+          : 'Live traffic is temporarily unavailable; GreenRoute is using its real-road fallback.')
       const distinctCount = new Set(strategyRoutes.map((route) => route.candidate_id)).size
       const distinctText = distinctCount < 3
         ? ` · ${distinctCount} distinct strategy road${distinctCount === 1 ? '' : 's'}; other TomTom roads shown in grey`
         : ' · 3 distinct strategy roads'
-      setMessage(`${data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed${distinctText} · ${data.notice}`)
+      setMessage(`${data.traffic_aware ? 'LIVE TRAFFIC' : data.mode === 'live' ? 'LIVE ROAD ROUTING' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed${distinctText} · ${data.notice}`)
     } catch (error) {
       setMessage(error.message)
     } finally { setLoading(false) }
   }
+
+  const refreshTraffic = useCallback(async (automatic = false) => {
+    if (!lastOptimizationForm || lastOptimizationForm.departure_time !== 'now' || trafficRefreshing) return
+    setTrafficRefreshing(true)
+    try {
+      const previous = routes.find((route) => route.kind === selectedKind) || routes[0] || null
+      const data = await optimizeRoute({ ...lastOptimizationForm, departure_time: 'now' })
+      const strategyRoutes = Object.entries(data.recommendations).map(([kind, route]) => ({
+        ...route,
+        kind,
+        label: kind.charAt(0).toUpperCase() + kind.slice(1),
+      }))
+      const next = strategyRoutes.find((route) => route.kind === selectedKind) || strategyRoutes[0] || null
+
+      if (data.traffic_aware) {
+        const roadChanged = Boolean(previous && next && (
+          previous.candidate_id !== next.candidate_id
+          || Math.abs(Number(previous.distance_km || 0) - Number(next.distance_km || 0)) >= 0.5
+        ))
+        const delayDelta = previous && next
+          ? Number(next.traffic_delay_minutes || 0) - Number(previous.traffic_delay_minutes || 0)
+          : 0
+
+        setRoutes(strategyRoutes)
+        setMapRoutes(buildMapRoutes(data, strategyRoutes))
+        setLastOptimization(data)
+        setRoutingMode(data.mode)
+        setLastTrafficCheck(new Date())
+
+        if (roadChanged) {
+          setTrafficNotice(`${automatic ? 'Auto-rerouted' : 'Rerouted'} ${selectedKind}: a different road is now preferred using current traffic. Live delay: ${Math.round(next?.traffic_delay_minutes || 0)} min.`)
+        } else if (Math.abs(delayDelta) >= 2) {
+          setTrafficNotice(`Traffic refreshed: ${selectedKind} stays on the same road, but live delay changed by ${delayDelta > 0 ? '+' : ''}${Math.round(delayDelta)} min.`)
+        } else {
+          setTrafficNotice(`Traffic refreshed: ${selectedKind} remains the preferred road. Current live delay: ${Math.round(next?.traffic_delay_minutes || 0)} min.`)
+        }
+      } else {
+        setTrafficMonitoring(false)
+        setTrafficNotice('Live traffic provider is temporarily unavailable. Automatic traffic rerouting is paused; GraphHopper fallback is still available.')
+      }
+    } catch (error) {
+      setTrafficNotice(`Traffic refresh failed: ${error.message}`)
+    } finally {
+      setTrafficRefreshing(false)
+    }
+  }, [lastOptimizationForm, trafficRefreshing, routes, selectedKind])
+
+  useEffect(() => {
+    if (!trafficMonitoring || !lastOptimizationForm || lastOptimizationForm.departure_time !== 'now') return undefined
+    const timer = window.setInterval(() => refreshTraffic(true), 60000)
+    return () => window.clearInterval(timer)
+  }, [trafficMonitoring, lastOptimizationForm, refreshTraffic])
 
   async function saveTrip() {
     if (!session?.access_token) { setAuthOpen(true); setMessage('Sign in first, then GreenRoute can save this route decision to your private trip history.'); return }
@@ -297,9 +364,9 @@ export default function App() {
     try { await deleteSavedTrip(runId, session.access_token); setMessage('Saved trip removed.'); await loadCloudData(session) } catch (error) { setMessage(error.message) }
   }
 
-  const modeLabel = routingMode === 'live' ? 'Live routing' : routingMode === 'demo' ? 'Demo mode' : routingMode === 'offline' ? 'Backend offline' : 'Connecting'
+  const modeLabel = routingMode === 'live' ? 'Live traffic' : routingMode === 'demo' ? 'Demo mode' : routingMode === 'offline' ? 'Backend offline' : 'Connecting'
   const modeDetail = routingMode === 'live'
-    ? 'GraphHopper road routing with TomTom fallback'
+    ? 'TomTom live traffic with GraphHopper fallback'
     : routingMode === 'demo'
       ? 'Synthetic routes — safe for interface testing'
       : routingMode === 'offline'
@@ -382,6 +449,19 @@ export default function App() {
 
         {routes.length > 0 && fastestRoute && <div className="route-results-heading"><div><span>ROUTE COMPARISON</span><h3>Choose what matters for this delivery</h3></div><small>Select a card to highlight its physical road.</small></div>}
         {routes.length > 0 && fastestRoute && <div className="route-cards">{routes.map((route) => <RouteCard key={route.kind} route={route} fastestRoute={fastestRoute} active={selectedKind === route.kind} onClick={() => setSelectedKind(route.kind)} />)}</div>}
+        {routes.length > 0 && lastOptimizationForm?.departure_time === 'now' && <div className={`traffic-monitor-card ${lastOptimization?.traffic_aware ? 'active' : 'paused'}`}>
+          <div className="traffic-monitor-copy">
+            <span>LIVE TRAFFIC MONITOR</span>
+            <strong>{lastOptimization?.traffic_aware ? 'Real-time traffic-aware rerouting' : 'Traffic monitoring paused'}</strong>
+            <p>{trafficNotice}</p>
+            <small>{lastTrafficCheck ? `Last checked ${lastTrafficCheck.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Not checked yet'}{lastOptimization?.traffic_aware ? ' · TomTom live traffic' : ' · GraphHopper fallback'}</small>
+          </div>
+          <div className="traffic-monitor-actions">
+            <label><input type="checkbox" checked={trafficMonitoring} disabled={!lastOptimization?.traffic_aware} onChange={(event) => setTrafficMonitoring(event.target.checked)} /> Auto-reroute every 60 sec</label>
+            <button type="button" onClick={() => refreshTraffic(false)} disabled={trafficRefreshing}>{trafficRefreshing ? 'Checking traffic…' : 'Check traffic now'}</button>
+          </div>
+        </div>}
+
         {routes.length > 0 && distinctStrategyRoads < 3 && <div className="strategy-overlap-note"><b>{distinctStrategyRoads === 1 ? 'One physical road wins multiple objectives.' : 'Two strategy labels share a physical road.'}</b> The current vehicle’s cost and CO₂ estimates both depend on energy use. Shared roads can therefore win multiple objectives. Adjust Balanced priorities and recalculate to explore the trade-off.</div>}
         {selectedRoute && fastestRoute && <RouteIntelligence route={selectedRoute} fastestRoute={fastestRoute} />}
         <div className="save-trip-bar glass-panel"><div><span>TRIP MEMORY</span><strong>{lastOptimization && selectedRoute ? `Save ${selectedRoute.label} as the chosen strategy` : 'Your chosen route can be saved here'}</strong><small>{session ? `Signed in as ${session.user.email}` : supabaseConfigured ? 'Sign in with a secure email magic link to sync history.' : 'Cloud sync is not configured yet.'}</small></div><button type="button" className="primary-btn" onClick={saveTrip} disabled={saving || !lastOptimization}>{saving ? 'Saving…' : session ? 'Save trip' : 'Sign in to save'}<span>↗</span></button></div>
@@ -389,7 +469,7 @@ export default function App() {
 
       <section id="intelligence" className="scoring-page" hidden={activeView !== 'intelligence'}>
         <div className="scoring-cards">
-          <article><span>01 / FASTEST</span><h2>Time comes first.</h2><p>Selects the lowest estimated travel time among the returned road options.</p></article>
+          <article><span>01 / FASTEST</span><h2>Time comes first.</h2><p>Uses the lowest live-traffic ETA when TomTom is available. For departures set to Now, GreenRoute can re-check traffic and reroute automatically as conditions change.</p></article>
           <article><span>02 / BALANCED</span><h2>Your priorities, combined.</h2><p>Uses adjustable time, cost and CO₂ weights. Defaults to 50% time, 30% cost and 20% CO₂. Each metric is scaled from 0 to 1 across the evaluated candidates.</p></article>
           <article><span>03 / GREENEST</span><h2>Lower estimated carbon.</h2><p>Selects the lowest estimated CO₂ among Pareto-efficient roads, using cost and time to break ties.</p></article>
         </div>

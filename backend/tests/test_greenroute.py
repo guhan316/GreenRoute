@@ -19,6 +19,22 @@ class GreenRouteCoreTests(unittest.TestCase):
         self.assertEqual(len(routes), 4)
         self.assertTrue(all(route['distance_km'] > 0 for route in routes))
 
+    def test_tomtom_route_parser_keeps_live_traffic_delay(self):
+        payload = {
+            'routes': [{
+                'summary': {
+                    'lengthInMeters': 10000,
+                    'travelDurationInSeconds': 1200,
+                    'trafficDelayDurationInSeconds': 300,
+                },
+                'legs': [{'path': {'coordinates': [[80.27, 13.08], [80.15, 12.99]]}}],
+            }]
+        }
+        route = TomTomClient._parse_routes(payload, 'fast')[0]
+        self.assertEqual(route['distance_km'], 10.0)
+        self.assertEqual(route['duration_minutes'], 20.0)
+        self.assertEqual(route['traffic_delay_minutes'], 5.0)
+
     def test_tomtom_search_parser_keeps_poi_and_exact_coordinates(self):
         payload = {
             'results': [{
@@ -130,6 +146,8 @@ class GreenRouteApiTests(unittest.TestCase):
         self.assertEqual(data['status'], 'ok')
         self.assertIn(data['routing_mode'], {'demo', 'live'})
         self.assertIn('vehicle_catalog_configured', data)
+        self.assertIn('live_traffic_available', data)
+        self.assertIn('auto_rerouting_supported', data)
 
     def test_demo_optimization_end_to_end(self):
         response = self.client.post('/api/routes/optimize', json={
