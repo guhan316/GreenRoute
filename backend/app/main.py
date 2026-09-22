@@ -24,7 +24,7 @@ from .services.vrp import solve_capacitated_vrp
 settings = get_settings()
 persistence = SupabasePersistence(settings.supabase_url, settings.supabase_publishable_key)
 catalog = VehicleCatalogService(settings.supabase_url, settings.supabase_publishable_key)
-app = FastAPI(title='GreenRoute API', version='1.0.0')
+app = FastAPI(title='GreenRoute API', version='1.1.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -62,21 +62,23 @@ async def _resolve_route_place(value):
 @app.get('/health')
 def health():
     provider_chain = []
-    if settings.graphhopper_api_key:
-        provider_chain.append('graphhopper')
     if settings.tomtom_api_key:
-        provider_chain.append('tomtom-fallback' if settings.graphhopper_api_key else 'tomtom')
+        provider_chain.append('tomtom-live-traffic')
+    if settings.graphhopper_api_key:
+        provider_chain.append('graphhopper-fallback' if settings.tomtom_api_key else 'graphhopper')
     if not provider_chain and settings.demo_fallback_enabled:
         provider_chain.append('demo')
 
     return {
         'status': 'ok',
         'service': 'GreenRoute API',
-        'version': '1.0.0',
+        'version': '1.1.0',
         'tomtom_configured': bool(settings.tomtom_api_key),
         'graphhopper_configured': bool(settings.graphhopper_api_key),
-        'primary_routing_provider': 'graphhopper' if settings.graphhopper_api_key else ('tomtom' if settings.tomtom_api_key else 'demo'),
+        'primary_routing_provider': 'tomtom-live-traffic' if settings.tomtom_api_key else ('graphhopper' if settings.graphhopper_api_key else 'demo'),
         'routing_provider_chain': provider_chain,
+        'live_traffic_available': bool(settings.tomtom_api_key),
+        'auto_rerouting_supported': bool(settings.tomtom_api_key),
         'demo_fallback_enabled': settings.demo_fallback_enabled,
         'routing_mode': 'live' if (settings.graphhopper_api_key or settings.tomtom_api_key) else 'demo',
         'supabase_persistence_configured': persistence.configured,
@@ -144,47 +146,51 @@ async def optimize_routes(request: RouteOptimizationRequest):
             origin = await _resolve_route_place(request.origin)
             destination = await _resolve_route_place(request.destination)
 
-            if settings.graphhopper_api_key:
+            # Live traffic is a GreenRoute requirement. When TomTom is configured,
+            # use its traffic-aware routing first. GraphHopper remains a resilient
+            # real-road fallback when the live traffic provider is unavailable.
+            if settings.tomtom_api_key:
                 try:
-                    graphhopper = GraphHopperClient(settings.graphhopper_api_key)
-                    candidates = await asyncio.wait_for(graphhopper.calculate_routes(origin, destination), timeout=5)
-                    routing_provider = 'graphhopper'
-                    traffic_aware = False
-                    notice = (
-                        'GraphHopper provided real OpenStreetMap-based road candidates. '
-                        'ETA is a road-network estimate; live traffic delay is not claimed for this provider.'
-                    )
-                except Exception as graphhopper_error:
-                    if not settings.tomtom_api_key:
-                        raise
                     tomtom = TomTomClient(settings.tomtom_api_key)
-                    candidates = await tomtom.calculate_routes(
-                        origin,
-                        destination,
-                        vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
-                        max_speed_kmph=profile.max_speed_kmph,
-                        departure_time=request.departure_time,
-                        combustion=profile.fuel_type != 'electric',
+                    candidates = await asyncio.wait_for(
+                        tomtom.calculate_routes(
+                            origin,
+                            destination,
+                            vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
+                            max_speed_kmph=profile.max_speed_kmph,
+                            departure_time=request.departure_time,
+                            combustion=profile.fuel_type != 'electric',
+                        ),
+                        timeout=12,
                     )
-                    routing_provider = 'tomtom-fallback'
+                    routing_provider = 'tomtom-live-traffic'
                     traffic_aware = True
                     notice = (
-                        'GraphHopper routing was temporarily unavailable, so GreenRoute used TomTom as '
-                        'a traffic-aware routing fallback.'
+                        'TomTom live traffic is included in ETA and route selection. '
+                        'When the planner refreshes this request, GreenRoute can automatically '
+                        'switch Fastest, Balanced or Greenest to a better road as traffic changes.'
+                    )
+                except Exception:
+                    if not settings.graphhopper_api_key:
+                        raise
+                    graphhopper = GraphHopperClient(settings.graphhopper_api_key)
+                    candidates = await asyncio.wait_for(graphhopper.calculate_routes(origin, destination), timeout=6)
+                    routing_provider = 'graphhopper-fallback'
+                    traffic_aware = False
+                    notice = (
+                        'The live traffic provider was temporarily unavailable, so GreenRoute '
+                        'used GraphHopper real-road routing. Traffic-based automatic rerouting '
+                        'will resume when TomTom is available.'
                     )
             else:
-                tomtom = TomTomClient(settings.tomtom_api_key)
-                candidates = await tomtom.calculate_routes(
-                    origin,
-                    destination,
-                    vehicle_weight_kg=int(profile.kerb_weight_kg + request.load_kg),
-                    max_speed_kmph=profile.max_speed_kmph,
-                    departure_time=request.departure_time,
-                    combustion=profile.fuel_type != 'electric',
+                graphhopper = GraphHopperClient(settings.graphhopper_api_key)
+                candidates = await asyncio.wait_for(graphhopper.calculate_routes(origin, destination), timeout=6)
+                routing_provider = 'graphhopper'
+                traffic_aware = False
+                notice = (
+                    'GraphHopper provided real road routing. Configure TomTom to enable '
+                    'live traffic detection and automatic traffic-based rerouting.'
                 )
-                routing_provider = 'tomtom'
-                traffic_aware = True
-                notice = 'TomTom provided live traffic-aware route candidates.'
         else:
             if not settings.demo_fallback_enabled:
                 raise ValueError('Configure GRAPHOPPER_API_KEY or TOMTOM_API_KEY when demo fallback is disabled')
