@@ -290,7 +290,7 @@ export default function App() {
       const distinctText = distinctCount < 3
         ? ` · ${distinctCount} distinct strategy road${distinctCount === 1 ? '' : 's'}; other TomTom roads shown in grey`
         : ' · 3 distinct strategy roads'
-      setMessage(`${data.mode === 'live' ? 'LIVE TRAFFIC' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed${distinctText} · ${data.notice}`)
+      setMessage(`${data.traffic_aware ? 'LIVE TRAFFIC' : data.mode === 'live' ? 'LIVE ROAD ROUTING' : 'DEMO SIMULATION'} · ${data.candidate_count} candidate routes analysed${distinctText} · ${data.notice}`)
     } catch (error) {
       setMessage(error.message)
     } finally { setLoading(false) }
