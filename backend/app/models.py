@@ -97,6 +97,8 @@ class DispatchOrder(BaseModel):
     weight_kg: float = Field(gt=0, le=50000, allow_inf_nan=False)
     priority: int = Field(default=3, ge=1, le=5)
     deadline: str | None = Field(default=None, max_length=64)
+    earliest_delivery: str | None = Field(default=None, max_length=64)
+    service_minutes: int = Field(default=10, ge=0, le=240)
     cargo_type: str = Field(default='general', max_length=80)
     status: str = Field(default='pending', pattern='^(pending|assigned|in_transit|delivered)$')
 
@@ -111,5 +113,6 @@ class DispatchVehicle(BaseModel):
 
 class DispatchPlanRequest(BaseModel):
     depot: PlaceInput
+    planned_departure_time: str | None = Field(default=None, max_length=64)
     orders: list[DispatchOrder] = Field(min_length=1, max_length=25)
     vehicles: list[DispatchVehicle] = Field(min_length=1, max_length=10)
