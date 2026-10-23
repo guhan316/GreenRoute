@@ -144,7 +144,7 @@ async def solve_fleet_dispatch(request, graphhopper_api_key: str = '', demo_fall
                 'deadline_met': order.deadline is None or (departure + timedelta(minutes=arrival_by_node[node])) <= _parse_schedule_time(order.deadline),
                 'cargo_type': order.cargo_type,
                 'place': order.place.model_dump(),
-            } for order in route_orders],
+            } for node, order in zip(order_nodes, route_orders)],
             'route_sequence': [request.depot.label, *[order.place.label for order in route_orders], request.depot.label],
         })
 
