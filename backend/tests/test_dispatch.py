@@ -50,6 +50,25 @@ class DispatchSolverTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'deadline is before the planned departure'):
             solve_fleet_dispatch(DispatchPlanRequest(**payload))
 
+    def test_deadline_window_is_enforced_by_solver(self):
+        payload = {
+            **PAYLOAD,
+            'planned_departure_time': '2026-10-23T12:00:00Z',
+            'orders': [{**PAYLOAD['orders'][0], 'deadline': '2026-10-23T12:01:00Z'}],
+        }
+        with self.assertRaisesRegex(ValueError, 'No feasible VRP solution'):
+            solve_fleet_dispatch(DispatchPlanRequest(**payload))
+
+    def test_earliest_delivery_window_is_returned_in_schedule(self):
+        payload = {
+            **PAYLOAD,
+            'planned_departure_time': '2026-10-23T12:00:00Z',
+            'orders': [{**PAYLOAD['orders'][0], 'earliest_delivery': '2026-10-23T12:20:00Z'}],
+        }
+        result = solve_fleet_dispatch(DispatchPlanRequest(**payload))
+        order = next(order for route in result['assignments'] for order in route['orders'])
+        self.assertGreaterEqual(order['planned_arrival_time'], '2026-10-23T12:20:00Z')
+
     def test_insufficient_capacity_is_rejected(self):
         payload = {**PAYLOAD, 'vehicles': [
             {**PAYLOAD['vehicles'][0], 'capacity_kg': 1000},
