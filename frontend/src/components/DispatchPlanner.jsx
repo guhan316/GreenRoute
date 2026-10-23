@@ -9,7 +9,9 @@ const newOrder = (index) => ({
   place: null,
   weight_kg: '',
   priority: 3,
+  earliest_delivery: '',
   deadline: '',
+  service_minutes: 10,
   cargo_type: 'general',
   status: 'pending',
 })
@@ -21,6 +23,15 @@ const newVehicle = (index) => ({
   capacity_kg: '',
   available: true,
 })
+
+function toUtcIso(value) {
+  return value ? new Date(value).toISOString() : null
+}
+
+function localDateTimeValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
 
 function loadStored(key, fallback) {
   try {
@@ -34,6 +45,7 @@ function loadStored(key, fallback) {
 export default function DispatchPlanner({ hidden = false }) {
   const [depotText, setDepotText] = useState('')
   const [depot, setDepot] = useState(null)
+  const [plannedDeparture, setPlannedDeparture] = useState(() => localDateTimeValue())
   const [orders, setOrders] = useState(() => loadStored('greenroute-orders', [newOrder(0), newOrder(1), newOrder(2)]))
   const [vehicles, setVehicles] = useState(() => loadStored('greenroute-fleet', [newVehicle(0), newVehicle(1)]))
   const [result, setResult] = useState(null)
@@ -63,11 +75,14 @@ export default function DispatchPlanner({ hidden = false }) {
     try {
       const data = await optimizeDispatch({
         depot,
+        planned_departure_time: toUtcIso(plannedDeparture),
         orders: readyOrders.map(({ place_text, ...order }) => ({
           ...order,
           weight_kg: Number(order.weight_kg),
           priority: Number(order.priority),
-          deadline: order.deadline || null,
+          earliest_delivery: toUtcIso(order.earliest_delivery),
+          deadline: toUtcIso(order.deadline),
+          service_minutes: Number(order.service_minutes ?? 10),
         })),
         vehicles: readyVehicles.map(vehicle => ({
           ...vehicle,
@@ -98,6 +113,7 @@ export default function DispatchPlanner({ hidden = false }) {
         <section className="dispatch-panel">
           <div className="dispatch-panel-head"><div><span>01</span><h2>Orders</h2></div><button type="button" onClick={() => setOrders(current => [...current, newOrder(current.length)])}>+ Add order</button></div>
           <LocationSearch label="Dispatch depot" text={depotText} selected={depot} onTextChange={value => { setDepotText(value); setDepot(null); setResult(null) }} onSelect={place => { setDepot(place); setDepotText(place.address || place.label); setResult(null) }} placeholder="Search warehouse or depot…" />
+          <label>Planned departure time<input type="datetime-local" value={plannedDeparture} onChange={event => setPlannedDeparture(event.target.value)} required /><small>All delivery windows are evaluated against this departure time.</small></label>
           <div className="dispatch-list">
             {orders.map((order, index) => <article className="order-row" key={order.order_id + index}>
               <div className="row-title"><strong>{order.order_id}</strong><select value={order.status} onChange={e => patchOrder(index, { status: e.target.value })}><option value="pending">Pending</option><option value="assigned">Assigned</option><option value="in_transit">In transit</option><option value="delivered">Delivered</option></select></div>
@@ -111,7 +127,11 @@ export default function DispatchPlanner({ hidden = false }) {
                 <label>Priority<select value={order.priority} onChange={e => patchOrder(index, { priority: Number(e.target.value) })}><option value="5">5 · Critical</option><option value="4">4 · High</option><option value="3">3 · Normal</option><option value="2">2 · Low</option><option value="1">1 · Flexible</option></select></label>
                 <label>Cargo<select value={order.cargo_type} onChange={e => patchOrder(index, { cargo_type: e.target.value })}><option value="general">General</option><option value="medical">Medical</option><option value="refrigerated">Refrigerated</option><option value="fragile">Fragile</option><option value="bulk">Bulk</option></select></label>
               </div>
-              <label>Deadline<input type="datetime-local" value={order.deadline} onChange={e => patchOrder(index, { deadline: e.target.value })} /></label>
+              <div className="two-col">
+                <label>Earliest delivery<input type="datetime-local" value={order.earliest_delivery || ''} onChange={e => patchOrder(index, { earliest_delivery: e.target.value })} /><small>Optional: do not arrive before this time.</small></label>
+                <label>Latest delivery / deadline<input type="datetime-local" value={order.deadline || ''} onChange={e => patchOrder(index, { deadline: e.target.value })} /><small>Optional: route must arrive by this time.</small></label>
+              </div>
+              <label>Unloading / service time (minutes)<input type="number" min="0" max="240" value={order.service_minutes ?? 10} onChange={e => patchOrder(index, { service_minutes: e.target.value })} /></label>
               {orders.length > 1 && <button className="remove-row" type="button" onClick={() => setOrders(current => current.filter((_, i) => i !== index))}>Remove order</button>}
             </article>)}
           </div>
@@ -138,17 +158,18 @@ export default function DispatchPlanner({ hidden = false }) {
       </div>
 
       <div className="dispatch-action">
-        <div><strong>Fleet dispatch optimization</strong><p>{message}</p><small>Assignment uses OR-Tools CVRP with capacity constraints. Distance is a road-factor proxy for allocation; GreenRoute road providers remain the source for final road geometry.</small></div>
+        <div><strong>Fleet dispatch optimization</strong><p>{message}</p><small>Assignment uses OR-Tools CVRP with capacity and delivery-window constraints. Configure GraphHopper to optimize against provider-backed road distances, travel times, and route geometry.</small></div>
         <button className="optimize-btn" disabled={busy || !depot || !readyOrders.length || !readyVehicles.length || demand > capacity} type="submit">{busy ? 'Optimizing fleet…' : 'Optimize fleet dispatch'} →</button>
       </div>
     </form>
 
     {result && <section className="dispatch-results">
-      <div className="dispatch-result-head"><div><span>OR-TOOLS DISPATCH PLAN</span><h2>{result.assigned_order_count} orders · {result.total_distance_km_estimate} km estimated</h2></div><div><b>{result.fleet_utilization_pct}%</b><small>fleet utilisation</small></div></div>
+      <div className="dispatch-result-head"><div><span>OR-TOOLS DISPATCH PLAN · {String(result.routing_provider || 'unknown').toUpperCase()}</span><h2>{result.assigned_order_count} orders · {result.total_distance_km_estimate} km estimated</h2><small>{result.distance_method}</small></div><div><b>{result.fleet_utilization_pct}%</b><small>fleet utilisation</small></div></div>
       <div className="assignment-grid">
         {result.assignments.map(assignment => <article key={assignment.vehicle_id} className={assignment.order_count ? 'assignment-card active' : 'assignment-card'}>
           <div className="assignment-title"><div><span>{assignment.vehicle_id}</span><strong>{assignment.vehicle_label}</strong><small>{assignment.driver || 'Driver not assigned'}</small></div><b>{assignment.utilization_pct}%</b></div>
-          <div className="assignment-metrics"><span><small>LOAD</small><b>{Math.round(assignment.load_kg).toLocaleString('en-IN')} / {Math.round(assignment.capacity_kg).toLocaleString('en-IN')} kg</b></span><span><small>ORDERS</small><b>{assignment.order_count}</b></span><span><small>DISTANCE</small><b>{assignment.distance_km_estimate} km</b></span></div>
+          <div className="assignment-metrics"><span><small>LOAD</small><b>{Math.round(assignment.load_kg).toLocaleString('en-IN')} / {Math.round(assignment.capacity_kg).toLocaleString('en-IN')} kg</b></span><span><small>ORDERS</small><b>{assignment.order_count}</b></span><span><small>DISTANCE</small><b>{assignment.distance_km_estimate} km</b></span>{assignment.estimated_drive_minutes != null && <span><small>DRIVING</small><b>{assignment.estimated_drive_minutes} min</b></span>}</div>
+          <p className="dispatch-help">{assignment.route_geometry?.length ? `Provider route geometry: ${assignment.route_geometry.length} road points. ` : ''}Estimated arrivals: {assignment.orders.map(order => `${order.order_id} · ${new Date(order.planned_arrival_time).toLocaleString()}`).join(' | ')}</p>
           {assignment.order_count ? <ol>{assignment.orders.map(order => <li key={order.order_id}><div><strong>{order.order_id} · {order.customer}</strong><small>{order.place.label} · {order.weight_kg} kg · P{order.priority}{order.deadline ? ` · due ${order.deadline.replace('T',' ')}` : ''}</small></div></li>)}</ol> : <p className="unused-vehicle">No orders assigned — retained as spare capacity.</p>}
         </article>)}
       </div>

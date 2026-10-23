@@ -318,8 +318,8 @@ async def multi_stop(request: MultiStopRequest):
 
 
 @app.post('/api/dispatch/optimize')
-def optimize_dispatch(request: DispatchPlanRequest):
+async def optimize_dispatch(request: DispatchPlanRequest):
     try:
-        return solve_fleet_dispatch(request)
+        return await solve_fleet_dispatch(request, settings.graphhopper_api_key, settings.demo_fallback_enabled)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from fastapi.testclient import TestClient
@@ -23,7 +24,7 @@ PAYLOAD = {
 
 class DispatchSolverTests(unittest.TestCase):
     def test_orders_are_assigned_once_within_capacity(self):
-        result = solve_fleet_dispatch(DispatchPlanRequest(**PAYLOAD))
+        result = asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**PAYLOAD)))
         assigned = [order['order_id'] for route in result['assignments'] for order in route['orders']]
         self.assertEqual(sorted(assigned), ['ORD-001', 'ORD-002', 'ORD-003'])
         self.assertEqual(len(assigned), len(set(assigned)))
@@ -37,9 +38,37 @@ class DispatchSolverTests(unittest.TestCase):
             {**PAYLOAD['vehicles'][0], 'capacity_kg': 3000},
             {**PAYLOAD['vehicles'][1], 'available': False},
         ]}
-        result = solve_fleet_dispatch(DispatchPlanRequest(**payload))
+        result = asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
         self.assertEqual(result['vehicle_count'], 1)
         self.assertEqual(result['assignments'][0]['vehicle_id'], 'VEH-01')
+
+    def test_deadline_before_departure_is_rejected(self):
+        payload = {
+            **PAYLOAD,
+            'planned_departure_time': '2026-10-23T12:00:00Z',
+            'orders': [{**PAYLOAD['orders'][0], 'deadline': '2026-10-23T11:00:00Z'}],
+        }
+        with self.assertRaisesRegex(ValueError, 'deadline is before the planned departure'):
+            asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
+
+    def test_deadline_window_is_enforced_by_solver(self):
+        payload = {
+            **PAYLOAD,
+            'planned_departure_time': '2026-10-23T12:00:00Z',
+            'orders': [{**PAYLOAD['orders'][0], 'deadline': '2026-10-23T12:01:00Z'}],
+        }
+        with self.assertRaisesRegex(ValueError, 'No feasible VRP solution'):
+            asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
+
+    def test_earliest_delivery_window_is_returned_in_schedule(self):
+        payload = {
+            **PAYLOAD,
+            'planned_departure_time': '2026-10-23T12:00:00Z',
+            'orders': [{**PAYLOAD['orders'][0], 'earliest_delivery': '2026-10-23T12:20:00Z'}],
+        }
+        result = asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
+        order = next(order for route in result['assignments'] for order in route['orders'])
+        self.assertGreaterEqual(order['planned_arrival_time'], '2026-10-23T12:20:00Z')
 
     def test_insufficient_capacity_is_rejected(self):
         payload = {**PAYLOAD, 'vehicles': [
@@ -47,7 +76,7 @@ class DispatchSolverTests(unittest.TestCase):
             {**PAYLOAD['vehicles'][1], 'available': False},
         ]}
         with self.assertRaisesRegex(ValueError, 'Fleet capacity is insufficient'):
-            solve_fleet_dispatch(DispatchPlanRequest(**payload))
+            asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
 
 
 class DispatchApiTests(unittest.TestCase):
@@ -60,6 +89,7 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         data = response.json()
         self.assertEqual(data['solver'], 'Google OR-Tools CVRP')
+        self.assertIn(data['routing_provider'], {'graphhopper', 'distance-proxy-demo'})
         self.assertEqual(data['assigned_order_count'], 3)
         self.assertEqual(data['unassigned_order_ids'], [])
 

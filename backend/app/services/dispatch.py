@@ -1,6 +1,8 @@
 import math
+from datetime import datetime, timedelta, timezone
 
 from .vrp import solve_capacitated_vrp
+from .graphhopper import GraphHopperClient
 
 
 def _haversine_km(a: dict, b: dict) -> float:
@@ -27,7 +29,19 @@ def _distance_matrix(points: list[dict]) -> list[list[int]]:
     return matrix
 
 
-def solve_fleet_dispatch(request) -> dict:
+def _parse_schedule_time(value: str | None, fallback: datetime | None = None) -> datetime | None:
+    if not value:
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"Invalid schedule time: {value}. Use an ISO date-time.") from exc
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+async def solve_fleet_dispatch(request, graphhopper_api_key: str = '', demo_fallback_enabled: bool = True) -> dict:
     active_orders = [order for order in request.orders if order.status in {'pending', 'assigned'}]
     available = [vehicle for vehicle in request.vehicles if vehicle.available]
     if not active_orders:
@@ -46,14 +60,47 @@ def solve_fleet_dispatch(request) -> dict:
     if oversized:
         raise ValueError('Orders exceed every available vehicle capacity: ' + ', '.join(oversized))
 
+    departure = _parse_schedule_time(
+        request.planned_departure_time,
+        datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    time_windows = [(0, 7 * 24 * 60)]
+    for order in active_orders:
+        earliest = _parse_schedule_time(order.earliest_delivery)
+        deadline = _parse_schedule_time(order.deadline)
+        earliest_minutes = 0 if earliest is None else int((earliest - departure).total_seconds() // 60)
+        latest_minutes = 7 * 24 * 60 if deadline is None else int((deadline - departure).total_seconds() // 60)
+        latest_minutes = min(latest_minutes, 7 * 24 * 60)
+        if latest_minutes < 0:
+            raise ValueError(f"Order {order.order_id} deadline is before the planned departure time")
+        if earliest_minutes < 0:
+            earliest_minutes = 0
+        if earliest_minutes > latest_minutes:
+            raise ValueError(f"Order {order.order_id} earliest delivery time is after its deadline")
+        time_windows.append((earliest_minutes, latest_minutes))
+
     depot = request.depot.model_dump()
     order_points = [order.place.model_dump() for order in active_orders]
     points = [depot, *order_points]
-    matrix = _distance_matrix(points)
+    routing_provider = 'distance-proxy-demo'
+    duration_matrix = None
+    if graphhopper_api_key:
+        provider = GraphHopperClient(graphhopper_api_key)
+        matrix_result = await provider.calculate_matrix(points)
+        matrix = matrix_result['distance_matrix_m']
+        duration_matrix = matrix_result['duration_matrix_s']
+        routing_provider = matrix_result['provider']
+    elif demo_fallback_enabled:
+        # Keep local development/tests usable without secrets; the response labels
+        # this fallback explicitly and never describes it as road-routing data.
+        matrix = _distance_matrix(points)
+    else:
+        raise ValueError('Configure GRAPHOPPER_API_KEY to optimize fleet assignments using a real road distance/time matrix')
     demands = [0, *[int(round(order.weight_kg)) for order in active_orders]]
     capacities = [int(round(vehicle.capacity_kg)) for vehicle in available]
 
-    solution = solve_capacitated_vrp(matrix, demands, capacities, depot=0)
+    service_minutes = [0, *[order.service_minutes for order in active_orders]]
+    solution = solve_capacitated_vrp(matrix, demands, capacities, depot=0, time_windows=time_windows, service_minutes=service_minutes, duration_matrix=duration_matrix)
 
     assignments = []
     assigned_ids = set()
@@ -61,8 +108,19 @@ def solve_fleet_dispatch(request) -> dict:
         vehicle = available[route['vehicle_id']]
         order_nodes = [node for node in route['nodes'] if node != 0]
         route_orders = [active_orders[node - 1] for node in order_nodes]
+        arrival_by_node = {node: minute for node, minute in zip(route['nodes'], route['arrival_minutes'])}
         assigned_ids.update(order.order_id for order in route_orders)
         load_kg = sum(order.weight_kg for order in route_orders)
+        route_geometry = []
+        route_duration_minutes = 0.0
+        if routing_provider == 'graphhopper':
+            route_nodes = route['nodes']
+            for start_node, end_node in zip(route_nodes, route_nodes[1:]):
+                if start_node == end_node:
+                    continue
+                segment = (await provider.calculate_routes(points[start_node], points[end_node]))[0]
+                route_geometry.extend(segment['coordinates'] if not route_geometry else segment['coordinates'][1:])
+                route_duration_minutes += segment['duration_minutes']
         assignments.append({
             'vehicle_id': vehicle.vehicle_id,
             'vehicle_label': vehicle.label,
@@ -71,6 +129,8 @@ def solve_fleet_dispatch(request) -> dict:
             'load_kg': round(load_kg, 2),
             'utilization_pct': round((load_kg / vehicle.capacity_kg) * 100, 1),
             'distance_km_estimate': round(route['distance'] / 1000, 1),
+            'estimated_drive_minutes': round(route_duration_minutes, 1) if routing_provider == 'graphhopper' else round(sum((duration_matrix[a][b] for a, b in zip(route['nodes'], route['nodes'][1:])), 0) / 60, 1) if duration_matrix else None,
+            'route_geometry': route_geometry if route_geometry else None,
             'order_count': len(route_orders),
             'orders': [{
                 'order_id': order.order_id,
@@ -78,16 +138,23 @@ def solve_fleet_dispatch(request) -> dict:
                 'weight_kg': order.weight_kg,
                 'priority': order.priority,
                 'deadline': order.deadline,
+                'earliest_delivery': order.earliest_delivery,
+                'service_minutes': order.service_minutes,
+                'planned_arrival_time': (departure + timedelta(minutes=arrival_by_node[node])).replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z'),
+                'deadline_met': order.deadline is None or (departure + timedelta(minutes=arrival_by_node[node])) <= _parse_schedule_time(order.deadline),
                 'cargo_type': order.cargo_type,
                 'place': order.place.model_dump(),
-            } for order in route_orders],
+            } for node, order in zip(order_nodes, route_orders)],
             'route_sequence': [request.depot.label, *[order.place.label for order in route_orders], request.depot.label],
         })
 
     assignments.sort(key=lambda item: (item['order_count'] == 0, item['vehicle_id']))
     return {
         'solver': 'Google OR-Tools CVRP',
-        'distance_method': 'great-circle distance × 1.22 road-factor proxy for fleet assignment',
+        'distance_method': 'GraphHopper road distance matrix' if routing_provider == 'graphhopper' else 'DEMO ONLY: great-circle distance × 1.22 proxy; configure GRAPHOPPER_API_KEY for road distances',
+        'routing_provider': routing_provider,
+        'schedule_method': 'Provider-backed road travel durations plus per-stop service time' if duration_matrix else 'DEMO ONLY: estimated travel time at 35 km/h plus per-stop service time',
+        'planned_departure_time': departure.replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z'),
         'depot': depot,
         'order_count': len(active_orders),
         'vehicle_count': len(available),
