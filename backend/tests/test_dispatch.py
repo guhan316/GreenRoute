@@ -41,6 +41,15 @@ class DispatchSolverTests(unittest.TestCase):
         self.assertEqual(result['vehicle_count'], 1)
         self.assertEqual(result['assignments'][0]['vehicle_id'], 'VEH-01')
 
+    def test_deadline_before_departure_is_rejected(self):
+        payload = {
+            **PAYLOAD,
+            'planned_departure_time': '2026-10-23T12:00:00Z',
+            'orders': [{**PAYLOAD['orders'][0], 'deadline': '2026-10-23T11:00:00Z'}],
+        }
+        with self.assertRaisesRegex(ValueError, 'deadline is before the planned departure'):
+            solve_fleet_dispatch(DispatchPlanRequest(**payload))
+
     def test_insufficient_capacity_is_rejected(self):
         payload = {**PAYLOAD, 'vehicles': [
             {**PAYLOAD['vehicles'][0], 'capacity_kg': 1000},
