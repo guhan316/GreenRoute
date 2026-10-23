@@ -45,7 +45,7 @@ def solve_capacitated_vrp(distance_matrix: list[list[int]], demands: list[int], 
 
     time_index = routing.RegisterTransitCallback(time_callback)
     horizon_minutes = 7 * 24 * 60
-    routing.AddDimension(time_index, 24 * 60, horizon_minutes, True, "Time")
+    routing.AddDimension(time_index, horizon_minutes, horizon_minutes, True, "Time")
     time_dimension = routing.GetDimensionOrDie("Time")
     if time_windows:
         if len(time_windows) != node_count:
