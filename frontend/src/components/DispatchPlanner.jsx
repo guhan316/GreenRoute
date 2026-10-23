@@ -75,6 +75,7 @@ export default function DispatchPlanner({ hidden = false }) {
     try {
       const data = await optimizeDispatch({
         depot,
+        planned_departure_time: toUtcIso(plannedDeparture),
         orders: readyOrders.map(({ place_text, ...order }) => ({
           ...order,
           weight_kg: Number(order.weight_kg),
