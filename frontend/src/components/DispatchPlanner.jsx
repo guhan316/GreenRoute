@@ -158,18 +158,18 @@ export default function DispatchPlanner({ hidden = false }) {
       </div>
 
       <div className="dispatch-action">
-        <div><strong>Fleet dispatch optimization</strong><p>{message}</p><small>Assignment uses OR-Tools CVRP with capacity constraints. Distance is a road-factor proxy for allocation; GreenRoute road providers remain the source for final road geometry.</small></div>
+        <div><strong>Fleet dispatch optimization</strong><p>{message}</p><small>Assignment uses OR-Tools CVRP with capacity and delivery-window constraints. Configure GraphHopper to optimize against provider-backed road distances, travel times, and route geometry.</small></div>
         <button className="optimize-btn" disabled={busy || !depot || !readyOrders.length || !readyVehicles.length || demand > capacity} type="submit">{busy ? 'Optimizing fleet…' : 'Optimize fleet dispatch'} →</button>
       </div>
     </form>
 
     {result && <section className="dispatch-results">
-      <div className="dispatch-result-head"><div><span>OR-TOOLS DISPATCH PLAN</span><h2>{result.assigned_order_count} orders · {result.total_distance_km_estimate} km estimated</h2></div><div><b>{result.fleet_utilization_pct}%</b><small>fleet utilisation</small></div></div>
+      <div className="dispatch-result-head"><div><span>OR-TOOLS DISPATCH PLAN · {String(result.routing_provider || 'unknown').toUpperCase()}</span><h2>{result.assigned_order_count} orders · {result.total_distance_km_estimate} km estimated</h2><small>{result.distance_method}</small></div><div><b>{result.fleet_utilization_pct}%</b><small>fleet utilisation</small></div></div>
       <div className="assignment-grid">
         {result.assignments.map(assignment => <article key={assignment.vehicle_id} className={assignment.order_count ? 'assignment-card active' : 'assignment-card'}>
           <div className="assignment-title"><div><span>{assignment.vehicle_id}</span><strong>{assignment.vehicle_label}</strong><small>{assignment.driver || 'Driver not assigned'}</small></div><b>{assignment.utilization_pct}%</b></div>
-          <div className="assignment-metrics"><span><small>LOAD</small><b>{Math.round(assignment.load_kg).toLocaleString('en-IN')} / {Math.round(assignment.capacity_kg).toLocaleString('en-IN')} kg</b></span><span><small>ORDERS</small><b>{assignment.order_count}</b></span><span><small>DISTANCE</small><b>{assignment.distance_km_estimate} km</b></span></div>
-          <p className="dispatch-help">Estimated arrivals: {assignment.orders.map(order => `${order.order_id} · ${new Date(order.planned_arrival_time).toLocaleString()}`).join(' | ')}</p>
+          <div className="assignment-metrics"><span><small>LOAD</small><b>{Math.round(assignment.load_kg).toLocaleString('en-IN')} / {Math.round(assignment.capacity_kg).toLocaleString('en-IN')} kg</b></span><span><small>ORDERS</small><b>{assignment.order_count}</b></span><span><small>DISTANCE</small><b>{assignment.distance_km_estimate} km</b></span>{assignment.estimated_drive_minutes != null && <span><small>DRIVING</small><b>{assignment.estimated_drive_minutes} min</b></span>}</div>
+          <p className="dispatch-help">{assignment.route_geometry?.length ? `Provider route geometry: ${assignment.route_geometry.length} road points. ` : ''}Estimated arrivals: {assignment.orders.map(order => `${order.order_id} · ${new Date(order.planned_arrival_time).toLocaleString()}`).join(' | ')}</p>
           {assignment.order_count ? <ol>{assignment.orders.map(order => <li key={order.order_id}><div><strong>{order.order_id} · {order.customer}</strong><small>{order.place.label} · {order.weight_kg} kg · P{order.priority}{order.deadline ? ` · due ${order.deadline.replace('T',' ')}` : ''}</small></div></li>)}</ol> : <p className="unused-vehicle">No orders assigned — retained as spare capacity.</p>}
         </article>)}
       </div>
