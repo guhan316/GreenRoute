@@ -1,7 +1,7 @@
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 
-def solve_capacitated_vrp(distance_matrix: list[list[int]], demands: list[int], capacities: list[int], depot: int = 0, time_windows: list[tuple[int, int]] | None = None, service_minutes: list[int] | None = None, travel_speed_kmph: float = 35.0) -> dict:
+def solve_capacitated_vrp(distance_matrix: list[list[int]], demands: list[int], capacities: list[int], depot: int = 0, time_windows: list[tuple[int, int]] | None = None, service_minutes: list[int] | None = None, travel_speed_kmph: float = 35.0, duration_matrix: list[list[int]] | None = None) -> dict:
     node_count = len(distance_matrix)
     if not node_count or any(len(row) != node_count for row in distance_matrix):
         raise ValueError("distance_matrix must be a non-empty square matrix")
@@ -36,11 +36,13 @@ def solve_capacitated_vrp(distance_matrix: list[list[int]], demands: list[int], 
         raise ValueError("service_minutes length must equal distance matrix size")
     if travel_speed_kmph <= 0:
         raise ValueError("travel_speed_kmph must be positive")
+    if duration_matrix is not None and (len(duration_matrix) != node_count or any(len(row) != node_count for row in duration_matrix)):
+        raise ValueError('duration_matrix must match distance_matrix dimensions')
 
     def time_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        travel_minutes = int(round(distance_matrix[from_node][to_node] / 1000 / travel_speed_kmph * 60))
+        travel_minutes = int(round(duration_matrix[from_node][to_node] / 60)) if duration_matrix is not None else int(round(distance_matrix[from_node][to_node] / 1000 / travel_speed_kmph * 60))
         return travel_minutes + int(service_minutes[from_node])
 
     time_index = routing.RegisterTransitCallback(time_callback)
