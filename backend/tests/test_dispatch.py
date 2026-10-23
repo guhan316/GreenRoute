@@ -58,7 +58,7 @@ class DispatchSolverTests(unittest.TestCase):
             'orders': [{**PAYLOAD['orders'][0], 'deadline': '2026-10-23T12:01:00Z'}],
         }
         with self.assertRaisesRegex(ValueError, 'No feasible VRP solution'):
-            solve_fleet_dispatch(DispatchPlanRequest(**payload))
+            asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
 
     def test_earliest_delivery_window_is_returned_in_schedule(self):
         payload = {
@@ -66,7 +66,7 @@ class DispatchSolverTests(unittest.TestCase):
             'planned_departure_time': '2026-10-23T12:00:00Z',
             'orders': [{**PAYLOAD['orders'][0], 'earliest_delivery': '2026-10-23T12:20:00Z'}],
         }
-        result = solve_fleet_dispatch(DispatchPlanRequest(**payload))
+        result = asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
         order = next(order for route in result['assignments'] for order in route['orders'])
         self.assertGreaterEqual(order['planned_arrival_time'], '2026-10-23T12:20:00Z')
 
@@ -76,7 +76,7 @@ class DispatchSolverTests(unittest.TestCase):
             {**PAYLOAD['vehicles'][1], 'available': False},
         ]}
         with self.assertRaisesRegex(ValueError, 'Fleet capacity is insufficient'):
-            solve_fleet_dispatch(DispatchPlanRequest(**payload))
+            asyncio.run(solve_fleet_dispatch(DispatchPlanRequest(**payload)))
 
 
 class DispatchApiTests(unittest.TestCase):
