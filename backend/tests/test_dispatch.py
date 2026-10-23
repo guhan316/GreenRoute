@@ -88,6 +88,7 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         data = response.json()
         self.assertEqual(data['solver'], 'Google OR-Tools CVRP')
+        self.assertIn(data['routing_provider'], {'graphhopper', 'distance-proxy-demo'})
         self.assertEqual(data['assigned_order_count'], 3)
         self.assertEqual(data['unassigned_order_ids'], [])
 
