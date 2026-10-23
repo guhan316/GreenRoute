@@ -69,6 +69,7 @@ def solve_fleet_dispatch(request) -> dict:
         deadline = _parse_schedule_time(order.deadline)
         earliest_minutes = 0 if earliest is None else int((earliest - departure).total_seconds() // 60)
         latest_minutes = 7 * 24 * 60 if deadline is None else int((deadline - departure).total_seconds() // 60)
+        latest_minutes = min(latest_minutes, 7 * 24 * 60)
         if latest_minutes < 0:
             raise ValueError(f"Order {order.order_id} deadline is before the planned departure time")
         if earliest_minutes < 0:
